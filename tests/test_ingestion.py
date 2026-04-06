@@ -163,10 +163,37 @@ class TestParsePackageLock:
         with pytest.raises(IngestionError, match="Unsupported lockfileVersion"):
             parse_package_lock(bad)
 
-    def test_missing_packages_field(self):
-        bad = json.dumps({"lockfileVersion": 3})
-        result = parse_package_lock(bad)
-        assert result["packages"] == {}
+    def test_missing_root_entry(self):
+        bad = json.dumps({"lockfileVersion": 3, "packages": {
+            "node_modules/react": {"version": "18.0.0"}
+        }})
+        with pytest.raises(IngestionError, match="no root entry"):
+            parse_package_lock(bad)
+
+    def test_dev_dependencies_excluded(self):
+        result = parse_package_lock(DEV_DEPS_LOCKFILE, include_dev=False)
+        root = result["packages"]["my-app@1.0.0"]
+        assert "react@18.2.0" in root["dependencies"]
+        assert "typescript@5.3.3" not in root["dependencies"]
+
+    def test_unresolved_dependencies_tracked(self):
+        lockfile = json.dumps({
+            "name": "my-app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "my-app",
+                    "version": "1.0.0",
+                    "dependencies": {"react": "^18.0.0", "ghost-pkg": "^1.0.0"}
+                },
+                "node_modules/react": {"version": "18.2.0"}
+            }
+        })
+        result = parse_package_lock(lockfile)
+        root = result["packages"]["my-app@1.0.0"]
+        assert "react@18.2.0" in root["dependencies"]
+        assert "ghost-pkg" in root["unresolved_dependencies"]
 
     def test_invalid_packages_type(self):
         bad = json.dumps({"lockfileVersion": 3, "packages": "bad"})
