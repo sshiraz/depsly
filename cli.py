@@ -31,25 +31,31 @@ def _compute_risk_score(report: GraphReport) -> tuple[int, list[tuple[str, int, 
         depth_pts = 8
     breakdown.append(("Depth risk", depth_pts, f"depth {report.max_depth}"))
 
-    # Concentration (0-20)
+    # Concentration (0-25)
     concentration_pts = 0
     if report.total_edges > 0 and report.top_packages_by_fanout:
         top3_edges = sum(c for _, c in report.top_packages_by_fanout[:3])
         concentration = top3_edges / report.total_edges
         if concentration >= 0.5:
+            concentration_pts = 25
+        elif concentration >= 0.4:
             concentration_pts = 20
         elif concentration >= 0.3:
-            concentration_pts = 14
+            concentration_pts = 15
         elif concentration >= 0.15:
             concentration_pts = 8
     breakdown.append(("Centralization risk", concentration_pts, "top packages dominate"))
 
-    # Size (0-5)
+    # Size (0-15)
     size_pts = 0
     if report.total_nodes >= 500:
-        size_pts = 5
+        size_pts = 15
+    elif report.total_nodes >= 300:
+        size_pts = 12
     elif report.total_nodes >= 200:
-        size_pts = 3
+        size_pts = 10
+    elif report.total_nodes >= 100:
+        size_pts = 5
     breakdown.append(("Size risk", size_pts, f"{report.total_nodes} dependencies"))
 
     # Transitive ratio (0-25)
@@ -212,6 +218,12 @@ def _format_report(report: GraphReport) -> str:
                 f"High centralization: {len(dominant)} packages control "
                 f"{pct}% of your dependency graph, increasing systemic risk"
             )
+    # Transitive exposure
+    if report.transitive_dependency_count >= 100:
+        risks.append(
+            f"High transitive exposure: {report.transitive_dependency_count} "
+            "indirect dependencies significantly increase your attack surface"
+        )
     if report.max_depth >= 5:
         risks.append(
             f"Deep dependency chain (depth {report.max_depth}) increases "
@@ -228,7 +240,7 @@ def _format_report(report: GraphReport) -> str:
     top = [(k, c) for k, c in report.top_packages_by_fanout if c > 0][:5]
     if top:
         lines.append("")
-        lines.append("Most connected packages:")
+        lines.append("Most connected packages (highest influence on your graph):")
         for key, count in top:
             lines.append(f"  - {key} ({count} deps)")
 
