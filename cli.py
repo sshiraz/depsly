@@ -249,6 +249,24 @@ def _format_report(report: GraphReport) -> str:
     lines.append("Summary:")
     lines.append(_build_summary(report))
 
+    # Suggested actions
+    actions: list[str] = []
+    if report.top_packages_by_fanout and report.top_packages_by_fanout[0][1] >= 5:
+        actions.append("Review top connected packages for necessity and trustworthiness")
+    if report.max_depth >= 5:
+        actions.append("Reduce dependency depth where possible")
+    if report.transitive_dependency_count >= 50:
+        actions.append("Audit transitive dependencies introduced by major packages")
+    if report.unresolved_dependency_count > 0:
+        actions.append("Investigate and resolve missing dependencies")
+    if report.has_cycle:
+        actions.append("Break circular dependency chains to simplify upgrades")
+    if actions:
+        lines.append("")
+        lines.append("Suggested actions:")
+        for action in actions:
+            lines.append(f"  - {action}")
+
     return "\n".join(lines)
 
 
