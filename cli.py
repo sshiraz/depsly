@@ -11,62 +11,77 @@ from core.graph import build_graph
 from core.ingestion import parse_package_lock
 
 
-def _compute_risk_score(report: GraphReport) -> int:
-    """Compute a 0-100 risk score from structural metrics."""
-    score = 0
+def _compute_risk_score(report: GraphReport) -> tuple[int, list[tuple[str, int, str]]]:
+    """Compute a 0-100 risk score with breakdown.
 
-    # Depth contribution (0-25): deeper = riskier
+    Returns (total_score, breakdown) where breakdown is a list of
+    (category, points, reason) tuples.
+    """
+    breakdown: list[tuple[str, int, str]] = []
+
+    # Depth contribution (0-25)
+    depth_pts = 0
     if report.max_depth >= 10:
-        score += 25
+        depth_pts = 25
     elif report.max_depth >= 7:
-        score += 20
+        depth_pts = 20
     elif report.max_depth >= 5:
-        score += 15
+        depth_pts = 15
     elif report.max_depth >= 3:
-        score += 8
+        depth_pts = 8
+    breakdown.append(("Depth risk", depth_pts, f"depth {report.max_depth}"))
 
-    # Transitive ratio (0-25): more transitive vs direct = riskier
-    if report.direct_dependency_count > 0:
-        ratio = report.transitive_dependency_count / report.direct_dependency_count
-        if ratio >= 20:
-            score += 25
-        elif ratio >= 12:
-            score += 20
-        elif ratio >= 8:
-            score += 15
-        elif ratio >= 4:
-            score += 10
-
-    # Concentration (0-20): few packages controlling many edges = riskier
+    # Concentration (0-20)
+    concentration_pts = 0
     if report.total_edges > 0 and report.top_packages_by_fanout:
         top3_edges = sum(c for _, c in report.top_packages_by_fanout[:3])
         concentration = top3_edges / report.total_edges
         if concentration >= 0.5:
-            score += 20
+            concentration_pts = 20
         elif concentration >= 0.3:
-            score += 14
+            concentration_pts = 14
         elif concentration >= 0.15:
-            score += 8
+            concentration_pts = 8
+    breakdown.append(("Centralization risk", concentration_pts, "top packages dominate"))
+
+    # Size (0-5)
+    size_pts = 0
+    if report.total_nodes >= 500:
+        size_pts = 5
+    elif report.total_nodes >= 200:
+        size_pts = 3
+    breakdown.append(("Size risk", size_pts, f"{report.total_nodes} dependencies"))
+
+    # Transitive ratio (0-25)
+    transitive_pts = 0
+    if report.direct_dependency_count > 0:
+        ratio = report.transitive_dependency_count / report.direct_dependency_count
+        if ratio >= 20:
+            transitive_pts = 25
+        elif ratio >= 12:
+            transitive_pts = 20
+        elif ratio >= 8:
+            transitive_pts = 15
+        elif ratio >= 4:
+            transitive_pts = 10
+    breakdown.append(("Transitive risk", transitive_pts, f"{report.transitive_dependency_count} indirect deps"))
 
     # Unresolved dependencies (0-15)
+    unresolved_pts = 0
     if report.unresolved_dependency_count >= 5:
-        score += 15
+        unresolved_pts = 15
     elif report.unresolved_dependency_count >= 2:
-        score += 10
+        unresolved_pts = 10
     elif report.unresolved_dependency_count >= 1:
-        score += 5
+        unresolved_pts = 5
+    breakdown.append(("Unresolved dependencies", unresolved_pts, f"{report.unresolved_dependency_count} missing"))
 
     # Cycles (0-10)
-    if report.has_cycle:
-        score += 10
+    cycle_pts = 10 if report.has_cycle else 0
+    breakdown.append(("Cycle risk", cycle_pts, "circular dependency" if report.has_cycle else "none"))
 
-    # Size penalty (0-5): very large graphs are inherently riskier
-    if report.total_nodes >= 500:
-        score += 5
-    elif report.total_nodes >= 200:
-        score += 3
-
-    return min(score, 100)
+    total = min(sum(pts for _, pts, _ in breakdown), 100)
+    return total, breakdown
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
@@ -89,7 +104,7 @@ def _styled_risk(label: str, score: int) -> str:
     return click.style(f"{label} RISK ({score}/100)", fg=color, bold=True)
 
 
-def _build_summary(report: GraphReport, score: int) -> str:
+def _build_summary(report: GraphReport) -> str:
     """Build a one-line interpretive summary."""
     traits: list[str] = []
     if report.max_depth >= 5:
@@ -98,9 +113,11 @@ def _build_summary(report: GraphReport, score: int) -> str:
         top3 = sum(c for _, c in report.top_packages_by_fanout[:3])
         concentration = top3 / report.total_edges
         if concentration >= 0.5:
-            traits.append("highly centralized")
+            traits.append("highly concentrated")
         elif concentration >= 0.2:
-            traits.append("moderately centralized")
+            traits.append("moderately concentrated")
+    if report.total_nodes >= 200:
+        traits.append("large")
 
     if not traits:
         structure = "a compact dependency structure"
@@ -126,7 +143,7 @@ def _format_report(report: GraphReport) -> str:
     lines: list[str] = []
 
     # Headline: Project Risk score
-    score = _compute_risk_score(report)
+    score, breakdown = _compute_risk_score(report)
     label = _risk_label(score)
     project = "unknown"
     if report.root_package_key:
@@ -142,6 +159,12 @@ def _format_report(report: GraphReport) -> str:
     lines.append(f"  - Direct: {report.direct_dependency_count}")
     lines.append(f"  - Transitive: {report.transitive_dependency_count}")
     lines.append(f"  - Max depth: {report.max_depth}")
+
+    # Score breakdown
+    lines.append("")
+    lines.append("Score breakdown:")
+    for category, pts, reason in breakdown:
+        lines.append(f"  - {category}: +{pts} ({reason})")
 
     # Key risks — opinionated interpretation
     risks: list[str] = []
@@ -198,7 +221,7 @@ def _format_report(report: GraphReport) -> str:
     # Summary
     lines.append("")
     lines.append("Summary:")
-    lines.append(_build_summary(report, score))
+    lines.append(_build_summary(report))
 
     return "\n".join(lines)
 
