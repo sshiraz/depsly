@@ -69,6 +69,9 @@ def _compute_risk_score(report: GraphReport) -> int:
     return min(score, 100)
 
 
+_RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
+
+
 def _risk_label(score: int) -> str:
     """Return a human-readable risk label."""
     if score >= 75:
@@ -80,6 +83,12 @@ def _risk_label(score: int) -> str:
     return "LOW"
 
 
+def _styled_risk(label: str, score: int) -> str:
+    """Format risk label with color and /100 scale."""
+    color = _RISK_COLORS.get(label, "white")
+    return click.style(f"{label} RISK ({score}/100)", fg=color, bold=True)
+
+
 def _build_summary(report: GraphReport, score: int) -> str:
     """Build a one-line interpretive summary."""
     traits: list[str] = []
@@ -87,10 +96,11 @@ def _build_summary(report: GraphReport, score: int) -> str:
         traits.append("deep")
     if report.total_edges > 0 and report.top_packages_by_fanout:
         top3 = sum(c for _, c in report.top_packages_by_fanout[:3])
-        if top3 / report.total_edges >= 0.3:
-            traits.append("centralized")
-    if report.total_nodes >= 200:
-        traits.append("large")
+        concentration = top3 / report.total_edges
+        if concentration >= 0.5:
+            traits.append("highly centralized")
+        elif concentration >= 0.2:
+            traits.append("moderately centralized")
 
     if not traits:
         structure = "a compact dependency structure"
@@ -122,7 +132,7 @@ def _format_report(report: GraphReport) -> str:
     if report.root_package_key:
         parts = report.root_package_key.rsplit("@", 1)
         project = parts[0] if parts else report.root_package_key
-    lines.append(f"Project Risk: {label} ({score})")
+    lines.append(f"Project Risk: {_styled_risk(label, score)}")
     lines.append(f"Project: {project}")
 
     # Dependencies
@@ -163,7 +173,7 @@ def _format_report(report: GraphReport) -> str:
             pct = round(edge_sum / report.total_edges * 100)
             risks.append(
                 f"High centralization: {len(dominant)} packages control "
-                f"{pct}% of your dependency graph"
+                f"{pct}% of your dependency graph, increasing systemic risk"
             )
     if report.max_depth >= 5:
         risks.append(
