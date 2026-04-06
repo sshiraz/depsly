@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "depsly"
+version = "0.1.0"
+description = "Dependency risk intelligence"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0",
+]
+
+[project.scripts]
+depsly = "cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["core*"]
+
+[tool.setuptools]
+py-modules = ["cli"]
