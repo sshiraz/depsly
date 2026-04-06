@@ -160,6 +160,20 @@ def _format_report(report: GraphReport) -> str:
     lines.append(f"  - Transitive: {report.transitive_dependency_count}")
     lines.append(f"  - Max depth: {report.max_depth}")
 
+    # Standout metric: dependency concentration
+    if report.total_edges > 0 and report.top_packages_by_fanout:
+        top_fanout = [
+            (key, count)
+            for key, count in report.top_packages_by_fanout
+            if count > 0
+        ]
+        top_n = min(10, len(top_fanout))
+        top_edges = sum(c for _, c in top_fanout[:top_n])
+        pct = round(top_edges / report.total_edges * 100)
+        lines.append("")
+        lines.append("Dependency concentration:")
+        lines.append(f"  Top {top_n} packages control {pct}% of your graph")
+
     # Score breakdown
     lines.append("")
     lines.append("Score breakdown:")
