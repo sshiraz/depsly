@@ -9,7 +9,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
-from core.analyze import analyze_graph
+from core.analyze import (
+    analyze_graph,
+    compute_blast_radius,
+    top_packages_by_blast_radius,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +187,14 @@ class TestAnalyzeGraph:
         # lodash and loose-envify are leaves
         assert report.leaf_package_count == 2
 
+    def test_blast_radius_in_report(self):
+        graph = build_graph(simple_graph_data())
+        report = analyze_graph(graph)
+        assert isinstance(report.top_packages_by_blast_radius, list)
+        # root excluded by default, so all entries are non-root
+        keys = [k for k, _, _ in report.top_packages_by_blast_radius]
+        assert "app@1.0.0" not in keys
+
     def test_end_to_end_from_lockfile(self):
         normalized = parse_package_lock(LOCKFILE)
         graph = build_graph(normalized)
@@ -193,3 +205,136 @@ class TestAnalyzeGraph:
         assert report.max_depth == 3
         assert report.has_cycle is False
         assert report.unresolved_dependency_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Blast radius tests
+# ---------------------------------------------------------------------------
+
+def shared_transitive_data():
+    """
+    app -> A -> C
+    app -> B -> C
+    C -> D
+    """
+    return {
+        "root": "app@1.0.0",
+        "packages": {
+            "app@1.0.0": {"name": "app", "version": "1.0.0", "dependencies": ["A@1.0.0", "B@1.0.0"]},
+            "A@1.0.0": {"name": "A", "version": "1.0.0", "dependencies": ["C@1.0.0"]},
+            "B@1.0.0": {"name": "B", "version": "1.0.0", "dependencies": ["C@1.0.0"]},
+            "C@1.0.0": {"name": "C", "version": "1.0.0", "dependencies": ["D@1.0.0"]},
+            "D@1.0.0": {"name": "D", "version": "1.0.0", "dependencies": []},
+        },
+    }
+
+
+def cycle_data():
+    """a -> b -> c -> a."""
+    return {
+        "root": "a@1.0.0",
+        "packages": {
+            "a@1.0.0": {"name": "a", "version": "1.0.0", "dependencies": ["b@1.0.0"]},
+            "b@1.0.0": {"name": "b", "version": "1.0.0", "dependencies": ["c@1.0.0"]},
+            "c@1.0.0": {"name": "c", "version": "1.0.0", "dependencies": ["a@1.0.0"]},
+        },
+    }
+
+
+class TestBlastRadius:
+    def test_basic_leaf(self):
+        """A leaf package affects its ancestors only."""
+        graph = build_graph(simple_graph_data())
+        # loose-envify is depended on by react, which is depended on by app
+        count, frac = compute_blast_radius(graph, "loose-envify@1.4.0")
+        assert count == 2  # react, app
+        assert frac == 2 / 4
+
+    def test_shared_node(self):
+        """C is depended on by A and B, both depended on by app."""
+        graph = build_graph(shared_transitive_data())
+        count, frac = compute_blast_radius(graph, "C@1.0.0")
+        assert count == 3  # A, B, app
+        assert frac == 3 / 5
+
+    def test_deep_leaf(self):
+        """D is the deepest leaf — affects C, A, B, app."""
+        graph = build_graph(shared_transitive_data())
+        count, frac = compute_blast_radius(graph, "D@1.0.0")
+        assert count == 4  # C, A, B, app
+        assert frac == 4 / 5
+
+    def test_include_self(self):
+        graph = build_graph(shared_transitive_data())
+        count, frac = compute_blast_radius(graph, "C@1.0.0", include_self=True)
+        assert count == 4  # C, A, B, app
+        assert frac == 4 / 5
+
+    def test_root_has_zero_blast(self):
+        """Root has no dependents — blast radius is 0."""
+        graph = build_graph(shared_transitive_data())
+        count, frac = compute_blast_radius(graph, "app@1.0.0")
+        assert count == 0
+        assert frac == 0.0
+
+    def test_nonexistent_package(self):
+        graph = build_graph(shared_transitive_data())
+        count, frac = compute_blast_radius(graph, "nope@0.0.0")
+        assert count == 0
+        assert frac == 0.0
+
+    def test_cycle_safety(self):
+        """Blast radius on cyclic graph should not infinite loop."""
+        graph = build_graph(cycle_data())
+        count, frac = compute_blast_radius(graph, "c@1.0.0")
+        # c -> a (dependent), a -> ... but a also depends on b which depends on c
+        # Upward from c: a is dependent of c, b is dependent of a (via cycle back)
+        # Actually: a depends on b, b depends on c, c depends on a
+        # dependents of c: b (b depends on c? No — b depends on c means c is dep of b? No.)
+        # Let me think: b@1.0.0 dependencies: [c@1.0.0], so b depends on c, so c.dependents = [b]
+        # a@1.0.0 dependencies: [b@1.0.0], so b.dependents = [a]
+        # c@1.0.0 dependencies: [a@1.0.0], so a.dependents = [c]
+        # Upward from c: dependents=[b], b.dependents=[a], a.dependents=[c] (already visited)
+        assert count == 2  # b, a
+        assert frac == 2 / 3
+
+
+class TestBlastRadiusRanking:
+    def test_root_excluded_by_default(self):
+        graph = build_graph(shared_transitive_data())
+        ranking = top_packages_by_blast_radius(graph)
+        keys = [k for k, _, _ in ranking]
+        assert "app@1.0.0" not in keys
+
+    def test_root_included_when_requested(self):
+        graph = build_graph(shared_transitive_data())
+        ranking = top_packages_by_blast_radius(graph, exclude_root=False)
+        keys = [k for k, _, _ in ranking]
+        assert "app@1.0.0" in keys
+
+    def test_ranking_order(self):
+        """Packages should be sorted by affected count desc, then key asc."""
+        graph = build_graph(shared_transitive_data())
+        ranking = top_packages_by_blast_radius(graph)
+        # D affects 4 (C,A,B,app), C affects 3 (A,B,app), A affects 1 (app), B affects 1 (app)
+        assert ranking[0][0] == "D@1.0.0"
+        assert ranking[0][1] == 4
+        assert ranking[1][0] == "C@1.0.0"
+        assert ranking[1][1] == 3
+        # A and B tie at 1 — alphabetical
+        assert ranking[2][0] == "A@1.0.0"
+        assert ranking[3][0] == "B@1.0.0"
+
+    def test_limit_zero(self):
+        graph = build_graph(shared_transitive_data())
+        assert top_packages_by_blast_radius(graph, limit=0) == []
+
+    def test_limit_negative(self):
+        graph = build_graph(shared_transitive_data())
+        with pytest.raises(ValueError, match="limit must be >= 0"):
+            top_packages_by_blast_radius(graph, limit=-1)
+
+    def test_limit_truncates(self):
+        graph = build_graph(shared_transitive_data())
+        ranking = top_packages_by_blast_radius(graph, limit=2)
+        assert len(ranking) == 2

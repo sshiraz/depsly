@@ -14,11 +14,17 @@ class PackageNode:
     version: str
     key: str
     dependencies: list[PackageNode] = field(default_factory=list, repr=False)
+    dependents: list[PackageNode] = field(default_factory=list, repr=False)
 
     def add_dependency(self, node: PackageNode) -> None:
         """Add a direct dependency if not already present."""
         if node not in self.dependencies:
             self.dependencies.append(node)
+
+    def add_dependent(self, node: PackageNode) -> None:
+        """Add a direct dependent if not already present."""
+        if node not in self.dependents:
+            self.dependents.append(node)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PackageNode):
@@ -115,6 +121,7 @@ def build_graph(data: dict) -> DependencyGraph:
                 graph.missing_keys.add(dep_key)
             else:
                 node.add_dependency(dep_node)
+                dep_node.add_dependent(node)
 
     return graph
 

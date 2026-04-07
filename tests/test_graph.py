@@ -271,6 +271,27 @@ class TestStats:
         assert stats["max_depth"] == 1
         assert stats["has_cycle"] is False
 
+    def test_dependents_simple(self):
+        g = build_graph(simple_graph_data())
+        react = g.nodes["react@18.2.0"]
+        lodash = g.nodes["lodash@4.17.21"]
+        assert g.root in react.dependents
+        assert g.root in lodash.dependents
+        # root has no dependents
+        assert g.root.dependents == []
+
+    def test_dependents_shared_node(self):
+        g = build_graph(shared_transitive_data())
+        c = g.nodes["C@1.0.0"]
+        dependent_keys = {d.key for d in c.dependents}
+        assert dependent_keys == {"A@1.0.0", "B@1.0.0"}
+
+    def test_dependents_deep_chain(self):
+        g = build_graph(deep_chain_data())
+        d = g.nodes["d@1.0.0"]
+        assert len(d.dependents) == 1
+        assert d.dependents[0].key == "c@1.0.0"
+
     def test_graph_stats_shared(self):
         g = build_graph(shared_transitive_data())
         stats = graph_stats(g)
