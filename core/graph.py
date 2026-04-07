@@ -303,6 +303,82 @@ def max_depth(graph: DependencyGraph, start_key: str | None = None) -> int:
     return memo.get(start, 0)
 
 
+def simulate_remove_package(
+    graph: DependencyGraph,
+    package_key: str,
+) -> DependencyGraph:
+    """Build a new graph with a package removed and only root-reachable nodes kept.
+
+    Does not mutate the original graph.
+
+    Semantics:
+        1. Exclude the target node
+        2. Rebuild edges excluding any reference to the target
+        3. Keep only nodes reachable from the root via BFS
+        4. If the target is the root, return an empty graph
+        5. If the target does not exist, return a copy of the reachable graph
+    """
+    root_key = graph.root_key
+
+    # Removing root yields empty graph
+    if package_key == root_key:
+        return DependencyGraph(root_key=root_key)
+
+    # Collect keys to include (everything except removed package)
+    eligible = {k for k in graph.nodes if k != package_key}
+
+    # BFS from root over eligible nodes to find reachable set
+    if root_key is None or root_key not in eligible:
+        return DependencyGraph(root_key=root_key)
+
+    reachable: set[str] = set()
+    queue: deque[str] = deque([root_key])
+    reachable.add(root_key)
+
+    while queue:
+        key = queue.popleft()
+        orig_node = graph.nodes[key]
+        for dep in orig_node.dependencies:
+            if dep.key in eligible and dep.key not in reachable:
+                reachable.add(dep.key)
+                queue.append(dep.key)
+
+    # Build new graph with only reachable nodes
+    new_graph = DependencyGraph(root_key=root_key)
+
+    # Pass 1: create nodes
+    for key in reachable:
+        orig = graph.nodes[key]
+        new_graph.nodes[key] = PackageNode(
+            name=orig.name,
+            version=orig.version,
+            key=orig.key,
+        )
+
+    # Pass 2: wire edges
+    for key in reachable:
+        orig = graph.nodes[key]
+        new_node = new_graph.nodes[key]
+        for dep in orig.dependencies:
+            if dep.key in new_graph.nodes:
+                dep_node = new_graph.nodes[dep.key]
+                new_node.add_dependency(dep_node)
+                dep_node.add_dependent(new_node)
+
+    # Track missing keys: original missing + deps that pointed to removed package
+    new_graph.missing_keys = set(graph.missing_keys)
+    if package_key in graph.nodes:
+        # Any reachable node that depended on the removed package now has an unresolved ref
+        for key in reachable:
+            orig = graph.nodes[key]
+            for dep in orig.dependencies:
+                if dep.key == package_key:
+                    new_graph.missing_keys.add(package_key)
+                    break
+
+    return new_graph
+
+
 def graph_stats(graph: DependencyGraph) -> dict[str, int | bool]:
     """Compute summary statistics for the graph."""
     total_edges = sum(len(n.dependencies) for n in graph.nodes.values())

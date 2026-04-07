@@ -12,6 +12,8 @@ from core.graph import (
     DependencyGraph,
     collect_transitive_deps,
     graph_stats,
+    simulate_remove_package,
+    traverse_bfs,
 )
 
 
@@ -151,4 +153,52 @@ def analyze_graph(graph: DependencyGraph, *, fanout_limit: int = 10) -> GraphRep
         leaf_package_count=leaf_count,
         top_packages_by_fanout=fanout,
         top_packages_by_blast_radius=blast,
+    )
+
+
+@dataclass
+class RemovalSimulationReport:
+    """Result of simulating the removal of a package from the graph."""
+
+    package_key: str
+    package_found: bool
+    affected_node_count: int
+    removed_subgraph_node_count: int
+    before_report: GraphReport
+    after_report: GraphReport
+    risk_delta: int | None
+
+
+def analyze_removal_impact(
+    graph: DependencyGraph,
+    package_key: str,
+) -> RemovalSimulationReport:
+    """Simulate removing a package and compare before/after metrics.
+
+    Computes full GraphReport for both the original and simulated graph,
+    then derives impact metrics from the difference.
+    """
+    before = analyze_graph(graph)
+    package_found = package_key in graph.nodes
+
+    simulated = simulate_remove_package(graph, package_key)
+    after = analyze_graph(simulated)
+
+    # Nodes present before but absent after
+    before_keys = set(traverse_bfs(graph))
+    after_keys = set(traverse_bfs(simulated))
+    affected_keys = before_keys - after_keys
+    affected_node_count = len(affected_keys)
+
+    # Nodes removed from the graph entirely (not just unreachable)
+    removed_subgraph_node_count = before.total_nodes - after.total_nodes
+
+    return RemovalSimulationReport(
+        package_key=package_key,
+        package_found=package_found,
+        affected_node_count=affected_node_count,
+        removed_subgraph_node_count=removed_subgraph_node_count,
+        before_report=before,
+        after_report=after,
+        risk_delta=None,
     )

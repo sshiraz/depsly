@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from core.analyze import analyze_graph, GraphReport
+from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 
@@ -295,6 +295,70 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int) -> None:
         graph = build_graph(normalized)
         report = analyze_graph(graph, fanout_limit=fanout_limit)
         click.echo(_format_report(report))
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command("simulate-remove")
+@click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
+@click.argument("package_key")
+@click.option(
+    "--include-dev/--no-dev",
+    default=True,
+    help="Include devDependencies (default: yes).",
+)
+def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None:
+    """Simulate removing a package and show the impact."""
+    try:
+        normalized = parse_package_lock(lockfile, include_dev=include_dev)
+        graph = build_graph(normalized)
+        result = analyze_removal_impact(graph, package_key)
+
+        if not result.package_found:
+            raise click.ClickException(
+                f"Package '{package_key}' not found in the dependency graph."
+            )
+
+        before = result.before_report
+        after = result.after_report
+
+        lines: list[str] = []
+        lines.append(f"Simulating removal: {package_key}")
+        lines.append("")
+        lines.append("Before:")
+        lines.append(f"  - Total dependencies: {before.total_nodes}")
+        lines.append(f"  - Max depth: {before.max_depth}")
+        lines.append(f"  - Transitive dependencies: {before.transitive_dependency_count}")
+        lines.append("")
+        lines.append("After:")
+        lines.append(f"  - Total dependencies: {after.total_nodes}")
+        lines.append(f"  - Max depth: {after.max_depth}")
+        lines.append(f"  - Transitive dependencies: {after.transitive_dependency_count}")
+        lines.append("")
+        lines.append("Impact:")
+
+        node_diff = before.total_nodes - after.total_nodes
+        lines.append(f"  - {node_diff} packages removed from the reachable graph")
+
+        depth_diff = before.max_depth - after.max_depth
+        if depth_diff > 0:
+            lines.append(f"  - Max depth reduced by {depth_diff}")
+        elif depth_diff < 0:
+            lines.append(f"  - Max depth increased by {-depth_diff}")
+        else:
+            lines.append("  - Max depth unchanged")
+
+        trans_diff = before.transitive_dependency_count - after.transitive_dependency_count
+        if trans_diff > 0:
+            lines.append(f"  - Transitive dependency count reduced by {trans_diff}")
+        elif trans_diff < 0:
+            lines.append(f"  - Transitive dependency count increased by {-trans_diff}")
+        else:
+            lines.append("  - Transitive dependency count unchanged")
+
+        click.echo("\n".join(lines))
+    except click.ClickException:
+        raise
     except Exception as e:
         raise click.ClickException(str(e))
 

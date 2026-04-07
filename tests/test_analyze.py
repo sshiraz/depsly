@@ -11,6 +11,7 @@ from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.analyze import (
     analyze_graph,
+    analyze_removal_impact,
     compute_blast_radius,
     top_packages_by_blast_radius,
 )
@@ -338,3 +339,57 @@ class TestBlastRadiusRanking:
         graph = build_graph(shared_transitive_data())
         ranking = top_packages_by_blast_radius(graph, limit=2)
         assert len(ranking) == 2
+
+
+# ---------------------------------------------------------------------------
+# Removal simulation tests
+# ---------------------------------------------------------------------------
+
+class TestRemovalSimulation:
+    def test_basic_removal_metrics(self):
+        """Removing C from shared graph: app, A, B remain (3 nodes)."""
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "C@1.0.0")
+        assert result.package_found is True
+        assert result.before_report.total_nodes == 5
+        assert result.after_report.total_nodes == 3  # app, A, B
+        assert result.removed_subgraph_node_count == 2  # C, D gone
+
+    def test_removal_affects_depth(self):
+        """Removing C should reduce max depth from 3 to 1."""
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "C@1.0.0")
+        assert result.before_report.max_depth == 3
+        assert result.after_report.max_depth == 1  # app -> A, app -> B
+
+    def test_removal_affects_transitive(self):
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "C@1.0.0")
+        assert result.before_report.transitive_dependency_count == 4
+        assert result.after_report.transitive_dependency_count == 2  # A, B
+
+    def test_nonexistent_package(self):
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "nope@0.0.0")
+        assert result.package_found is False
+        assert result.before_report.total_nodes == result.after_report.total_nodes
+
+    def test_remove_root(self):
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "app@1.0.0")
+        assert result.package_found is True
+        assert result.after_report.total_nodes == 0
+
+    def test_remove_leaf(self):
+        """Removing D from shared graph: app, A, B, C remain."""
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "D@1.0.0")
+        assert result.after_report.total_nodes == 4
+        assert result.removed_subgraph_node_count == 1
+
+    def test_cycle_safety(self):
+        graph = build_graph(cycle_data())
+        result = analyze_removal_impact(graph, "b@1.0.0")
+        assert result.package_found is True
+        # Only a reachable after removing b
+        assert result.after_report.total_nodes == 1

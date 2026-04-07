@@ -12,6 +12,7 @@ from core.graph import (
     graph_stats,
     has_cycle,
     max_depth,
+    simulate_remove_package,
     traverse_bfs,
     traverse_dfs,
     GraphBuildError,
@@ -300,3 +301,63 @@ class TestStats:
         assert stats["total_edges"] == 5
         assert stats["max_depth"] == 3
         assert stats["has_cycle"] is False
+
+
+# ---------------------------------------------------------------------------
+# Simulate remove tests
+# ---------------------------------------------------------------------------
+
+class TestSimulateRemove:
+    def test_remove_leaf_in_chain(self):
+        """a -> b -> c -> d: removing d leaves a, b, c."""
+        g = build_graph(deep_chain_data())
+        sim = simulate_remove_package(g, "d@1.0.0")
+        assert set(sim.nodes.keys()) == {"a@1.0.0", "b@1.0.0", "c@1.0.0"}
+        # c no longer has dependencies
+        assert sim.nodes["c@1.0.0"].dependencies == []
+
+    def test_remove_middle_of_chain(self):
+        """a -> b -> c -> d: removing b makes c, d unreachable."""
+        g = build_graph(deep_chain_data())
+        sim = simulate_remove_package(g, "b@1.0.0")
+        assert set(sim.nodes.keys()) == {"a@1.0.0"}
+
+    def test_remove_shared_node(self):
+        """app -> A -> C, app -> B -> C, C -> D: removing C leaves app, A, B."""
+        g = build_graph(shared_transitive_data())
+        sim = simulate_remove_package(g, "C@1.0.0")
+        assert set(sim.nodes.keys()) == {"app@1.0.0", "A@1.0.0", "B@1.0.0"}
+
+    def test_remove_nonexistent(self):
+        """Removing a nonexistent package returns the reachable graph unchanged."""
+        g = build_graph(simple_graph_data())
+        sim = simulate_remove_package(g, "nope@0.0.0")
+        assert set(sim.nodes.keys()) == set(g.nodes.keys())
+
+    def test_remove_root(self):
+        """Removing root yields an empty graph."""
+        g = build_graph(simple_graph_data())
+        sim = simulate_remove_package(g, "app@1.0.0")
+        assert len(sim.nodes) == 0
+
+    def test_cycle_safety(self):
+        """a -> b -> c -> a: removing b should not loop."""
+        g = build_graph(cycle_data())
+        sim = simulate_remove_package(g, "b@1.0.0")
+        # Only a is reachable (c depends on a, but a can't reach c without b)
+        assert set(sim.nodes.keys()) == {"a@1.0.0"}
+
+    def test_does_not_mutate_original(self):
+        g = build_graph(shared_transitive_data())
+        original_keys = set(g.nodes.keys())
+        simulate_remove_package(g, "C@1.0.0")
+        assert set(g.nodes.keys()) == original_keys
+
+    def test_reverse_edges_wired(self):
+        """Simulated graph should have correct dependents."""
+        g = build_graph(shared_transitive_data())
+        sim = simulate_remove_package(g, "D@1.0.0")
+        # C should still exist with dependents A and B
+        c = sim.nodes["C@1.0.0"]
+        dependent_keys = {d.key for d in c.dependents}
+        assert dependent_keys == {"A@1.0.0", "B@1.0.0"}
