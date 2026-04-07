@@ -363,6 +363,12 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
         else:
             lines.append("  - Transitive dependency count unchanged")
 
+        if result.top_impacted_packages:
+            lines.append("")
+            lines.append("Top impacted packages:")
+            for key, lost in result.top_impacted_packages:
+                lines.append(f"  - {key} -> {lost} packages lost")
+
         lines.append("")
         lines.append("Structural simulation only. Does not guarantee install, build, or runtime correctness.")
 

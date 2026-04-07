@@ -393,3 +393,26 @@ class TestRemovalSimulation:
         assert result.package_found is True
         # Only a reachable after removing b
         assert result.after_report.total_nodes == 1
+
+    def test_top_impacted_ordering(self):
+        """Top impacted should be sorted by lost count desc, then key asc."""
+        graph = build_graph(shared_transitive_data())
+        # Remove C: dependents are A and B. Both lose C and D (2 each).
+        result = analyze_removal_impact(graph, "C@1.0.0")
+        keys = [k for k, _ in result.top_impacted_packages]
+        # A and B tie — alphabetical
+        assert keys == ["A@1.0.0", "B@1.0.0"]
+        # Both lose the same count
+        assert result.top_impacted_packages[0][1] == result.top_impacted_packages[1][1]
+
+    def test_top_impacted_empty_for_nonexistent(self):
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "nope@0.0.0")
+        assert result.top_impacted_packages == []
+
+    def test_top_impacted_stable_on_ties(self):
+        """Deterministic: same input always produces same order."""
+        graph = build_graph(shared_transitive_data())
+        r1 = analyze_removal_impact(graph, "C@1.0.0")
+        r2 = analyze_removal_impact(graph, "C@1.0.0")
+        assert r1.top_impacted_packages == r2.top_impacted_packages

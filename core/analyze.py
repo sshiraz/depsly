@@ -167,6 +167,7 @@ class RemovalSimulationReport:
     before_report: GraphReport
     after_report: GraphReport
     risk_delta: int | None
+    top_impacted_packages: list[tuple[str, int]]
 
 
 def analyze_removal_impact(
@@ -193,6 +194,22 @@ def analyze_removal_impact(
     # Nodes removed from the graph entirely (not just unreachable)
     removed_subgraph_node_count = before.total_nodes - after.total_nodes
 
+    # Top impacted packages: direct dependents of the removed package,
+    # ranked by how many packages they lost from their subtree.
+    top_impacted: list[tuple[str, int]] = []
+    node = graph.get(package_key)
+    if node is not None:
+        for dependent in node.dependents:
+            # Count nodes reachable from this dependent in the original
+            # that are no longer present after removal
+            orig_reachable = set(traverse_bfs(graph, dependent.key))
+            lost = orig_reachable & affected_keys
+            if lost:
+                top_impacted.append((dependent.key, len(lost)))
+        # Sort: most lost desc, then key asc for deterministic ties
+        top_impacted.sort(key=lambda x: (-x[1], x[0]))
+        top_impacted = top_impacted[:5]
+
     return RemovalSimulationReport(
         package_key=package_key,
         package_found=package_found,
@@ -201,4 +218,5 @@ def analyze_removal_impact(
         before_report=before,
         after_report=after,
         risk_delta=None,
+        top_impacted_packages=top_impacted,
     )
