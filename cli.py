@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as json_mod
 from pathlib import Path
 
 import click
@@ -13,6 +14,14 @@ from core.scoring import score_project
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
+
+
+def _project_name(report: GraphReport) -> str:
+    """Extract project name from root package key."""
+    if report.root_package_key:
+        parts = report.root_package_key.rsplit("@", 1)
+        return parts[0] if parts else report.root_package_key
+    return "unknown"
 
 
 def _styled_risk(label: str, score: int) -> str:
@@ -63,12 +72,8 @@ def _format_report(report: GraphReport) -> str:
     proj_score = score_project(report)
     score = proj_score.total
     label = proj_score.label
-    project = "unknown"
-    if report.root_package_key:
-        parts = report.root_package_key.rsplit("@", 1)
-        project = parts[0] if parts else report.root_package_key
     lines.append(f"Project Risk: {_styled_risk(label, score)}")
-    lines.append(f"Project: {project}")
+    lines.append(f"Project: {_project_name(report)}")
 
     # Dependencies
     lines.append("")
@@ -200,13 +205,46 @@ def cli() -> None:
     type=int,
     help="Max packages in fanout ranking (default: 10).",
 )
-def analyze(lockfile: Path, include_dev: bool, fanout_limit: int) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool) -> None:
     """Analyze a package-lock.json file."""
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
         report = analyze_graph(graph, fanout_limit=fanout_limit)
-        click.echo(_format_report(report))
+        if as_json:
+            proj_score = score_project(report)
+            output = {
+                "project": _project_name(report),
+                "risk": {
+                    "score": proj_score.total,
+                    "label": proj_score.label,
+                    "components": [
+                        {"category": c.category, "points": c.points, "reason": c.reason}
+                        for c in proj_score.components
+                    ],
+                },
+                "dependencies": {
+                    "total": report.total_nodes,
+                    "direct": report.direct_dependency_count,
+                    "transitive": report.transitive_dependency_count,
+                    "max_depth": report.max_depth,
+                },
+                "flags": {
+                    "has_cycle": report.has_cycle,
+                    "unresolved_count": report.unresolved_dependency_count,
+                },
+                "top_packages_by_fanout": [
+                    {"key": k, "count": c} for k, c in report.top_packages_by_fanout if c > 0
+                ],
+                "top_packages_by_blast_radius": [
+                    {"key": k, "count": cnt, "fraction": round(f, 4)}
+                    for k, cnt, f in report.top_packages_by_blast_radius
+                ],
+            }
+            click.echo(json_mod.dumps(output, indent=2))
+        else:
+            click.echo(_format_report(report))
     except Exception as e:
         raise click.ClickException(str(e))
 
