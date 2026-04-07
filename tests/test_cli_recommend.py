@@ -31,6 +31,9 @@ class TestRecommendCli:
         assert "Impact:" in result.output
         assert "Classification:" in result.output
         assert "Why:" in result.output
+        assert "Next steps:" in result.output
+        assert "depsly trace <lockfile> <package>" in result.output
+        assert "depsly simulate-remove <lockfile> <package>" in result.output
 
     def test_recommend_output_is_stably_ordered(self):
         runner = CliRunner()
@@ -66,3 +69,10 @@ class TestRecommendCli:
         result = runner.invoke(cli, ["recommend", str(lockfile)])
         assert result.exit_code == 0
         assert result.output.strip() == "No package recommendations available."
+
+    def test_defer_actionability_is_clarified(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "5"])
+        assert result.exit_code == 0
+        assert "Action: DEFER" in result.output
+        assert "Actionability: HIGH (low impact)" in result.output

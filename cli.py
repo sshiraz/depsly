@@ -13,6 +13,7 @@ from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
 from core.scoring import score_project
 from core.simulate import simulate_remove as simulate_remove_result
+from core.trace import trace_package
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
@@ -220,10 +221,13 @@ def _format_recommendations(recommendations: list) -> str:
 
     for index, recommendation in enumerate(recommendations, 1):
         impact_pct = round(recommendation.impact_score * 100)
+        actionability = recommendation.actionability
+        if recommendation.recommendation_type == "DEFER" and recommendation.actionability != "LOW":
+            actionability = f"{recommendation.actionability} (low impact)"
         lines.append("")
         lines.append(f"{index}. {recommendation.package_key}")
         lines.append(f"   Action: {recommendation.recommendation_type}")
-        lines.append(f"   Actionability: {recommendation.actionability}")
+        lines.append(f"   Actionability: {actionability}")
         lines.append(f"   Reason confidence: {recommendation.reason_confidence}")
         lines.append(f"   Impact: {impact_pct}%")
         lines.append(f"   Classification: {_classification_summary(recommendation)}")
@@ -231,6 +235,27 @@ def _format_recommendations(recommendations: list) -> str:
         for reason in recommendation.rationale[:2]:
             lines.append(f"   - {reason}")
 
+    lines.append("")
+    lines.append("Next steps:")
+    lines.append("depsly trace <lockfile> <package>")
+    lines.append("depsly simulate-remove <lockfile> <package>")
+
+    return "\n".join(lines)
+
+
+def _format_trace_result(result) -> str:
+    """Format root-to-target trace paths for terminal output."""
+    if not result.package_found:
+        return f"Package '{result.package_key}' not found in the dependency graph."
+    if not result.reachable_from_root or not result.paths:
+        return f"Package '{result.package_key}' is not reachable from the root package."
+
+    lines: list[str] = []
+    lines.append(f"Trace for: {result.package_key}")
+    lines.append("")
+    lines.append("Paths:")
+    for index, path in enumerate(result.paths, 1):
+        lines.append(f"{index}. {' -> '.join(path)}")
     return "\n".join(lines)
 
 
@@ -316,6 +341,31 @@ def recommend(lockfile: Path, include_dev: bool, limit: int) -> None:
         graph = build_graph(normalized)
         recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
         click.echo(_format_recommendations(recommendations))
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command()
+@click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
+@click.argument("package_key")
+@click.option(
+    "--include-dev/--no-dev",
+    default=True,
+    help="Include devDependencies (default: yes).",
+)
+@click.option(
+    "--max-paths",
+    default=3,
+    type=int,
+    help="Max shortest paths to show (default: 3).",
+)
+def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int) -> None:
+    """Explain why a package exists by tracing shortest root-to-target paths."""
+    try:
+        normalized = parse_package_lock(lockfile, include_dev=include_dev)
+        graph = build_graph(normalized)
+        result = trace_package(graph, package_key, max_paths=max_paths)
+        click.echo(_format_trace_result(result))
     except Exception as e:
         raise click.ClickException(str(e))
 
