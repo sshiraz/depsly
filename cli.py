@@ -349,11 +349,14 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
 
         depth_diff = before.max_depth - after.max_depth
         if depth_diff > 0:
-            lines.append(f"  - Max depth reduced by {depth_diff}")
+            lines.append(f"  - Max depth reduced by {depth_diff} ({before.max_depth} -> {after.max_depth})")
         elif depth_diff < 0:
-            lines.append(f"  - Max depth increased by {-depth_diff}")
+            lines.append(f"  - Max depth increased by {-depth_diff} ({before.max_depth} -> {after.max_depth})")
         else:
-            lines.append("  - Max depth unchanged")
+            lines.append(
+                f"  - Deepest remaining path is unchanged (depth {after.max_depth}) "
+                "— the removed package was not on the longest chain"
+            )
 
         trans_diff = before.transitive_dependency_count - after.transitive_dependency_count
         if trans_diff > 0:

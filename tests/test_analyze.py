@@ -416,3 +416,21 @@ class TestRemovalSimulation:
         r1 = analyze_removal_impact(graph, "C@1.0.0")
         r2 = analyze_removal_impact(graph, "C@1.0.0")
         assert r1.top_impacted_packages == r2.top_impacted_packages
+
+    def test_depth_reduced_on_removal(self):
+        """Removing C reduces depth from 3 to 1."""
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "C@1.0.0")
+        assert result.before_report.max_depth == 3
+        assert result.after_report.max_depth == 1
+
+    def test_depth_unchanged_on_removal(self):
+        """Removing a non-deepest-path node keeps depth the same.
+
+        Graph: app -> A -> C -> D, app -> B -> C -> D
+        Removing B does not change max depth (app -> A -> C -> D still exists).
+        """
+        graph = build_graph(shared_transitive_data())
+        result = analyze_removal_impact(graph, "B@1.0.0")
+        assert result.before_report.max_depth == 3
+        assert result.after_report.max_depth == 3
