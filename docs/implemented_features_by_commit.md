@@ -105,6 +105,20 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Extended `core/scoring.py` with package-level impact, feasibility, and combined package score computation while preserving existing project scoring behavior.
 - Added tests covering shared models, graph helpers, classification, and package-level scoring.
 
+### `507320b` Add trace engine and standardize simulation results
+- Added `core/trace.py` with deterministic shortest-path tracing from root to a target package.
+- Added `core/simulate.py` with `simulate_remove(graph, package_key)` as the shared structural simulation API.
+- Standardized removal results through `RemoveSimulationResult`, including removed keys/counts, before/after totals, percent removed, impacted packages, disclaimer, and reusable simulated graph data.
+- Refactored analysis, package impact scoring, and `simulate-remove` CLI handling to consume the shared simulation result instead of recomputing impact in multiple places.
+- Added tests covering trace behavior, simulation result shape, CLI output consistency, and integration with existing analysis/scoring flows.
+
+### `f7f1ae4` Add actionability and reason-confidence to recommendation engine
+- Added `core/recommend.py` with deterministic recommendation ranking based on package classification, structural simulation, and package-level scoring.
+- Extended recommendation data with discrete `actionability` labels (`HIGH`, `MEDIUM`, `LOW`) derived from feasibility scores.
+- Added `reason_confidence` labels to express confidence in recommendation rationale from available structural and classification facts.
+- Added a soft tooling-package feasibility penalty and tightened the `REVIEW` versus `DEFER` split to reduce noisy recommendations.
+- Added focused tests for recommendation ranking, recommendation types, actionability labels, reason-confidence behavior, and tooling-aware feasibility scoring.
+
 ## Summary of Implemented Feature Areas
 
 - Backend/API scaffold
@@ -119,3 +133,7 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Human-readable and JSON reporting
 - Package classification
 - Package-level scoring
+- Trace engine
+- Standardized simulation results
+- Recommendation engine
+- Recommendation UX labels

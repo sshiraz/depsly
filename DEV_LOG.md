@@ -19,3 +19,6 @@
 - Added implemented feature history document with commit IDs
 - Updated feature inventory to match shipped functionality
 - Tightened removal-impact analysis to reuse computed affected nodes instead of repeated per-dependent traversal
+- Added shared simulation API and deterministic trace engine
+- Added recommendation engine with package ranking based on impact and feasibility
+- Added discrete actionability and reason-confidence labels for recommendation UX

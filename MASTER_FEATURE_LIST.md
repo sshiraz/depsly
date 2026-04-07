@@ -15,6 +15,10 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 - [x] Shared core models for simulation, classification, tracing, and recommendations
 - [x] Package classification engine
 - [x] Package-level scoring primitives
+- [x] Trace engine for deterministic shortest root-to-target paths
+- [x] Standardized structural simulation result API
+- [x] Recommendation engine with deterministic ranking
+- [x] Discrete actionability and reason-confidence labels for recommendations
 
 ## Implemented Product Features
 - [x] Installable CLI with `depsly analyze`
@@ -24,8 +28,6 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 - [x] JSON output for machine-readable analysis
 
 ## Planned / Not Yet Implemented
-- [ ] Trace engine
-- [ ] Recommendation engine
 - [ ] `depsly trace` CLI command
 - [ ] `depsly recommend` CLI command
 - [ ] History tracking
