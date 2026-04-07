@@ -10,6 +10,7 @@ import click
 from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
+from core.recommend import recommend_packages
 from core.scoring import score_project
 from core.simulate import simulate_remove as simulate_remove_result
 
@@ -197,6 +198,42 @@ def _format_report(report: GraphReport) -> str:
     return "\n".join(lines)
 
 
+def _classification_summary(recommendation) -> str:
+    """Build a short classification summary for a recommendation."""
+    labels: list[str] = []
+    if recommendation.classification.is_direct_dependency:
+        labels.append("direct")
+    elif recommendation.classification.is_transitive_dependency:
+        labels.append("transitive")
+    if recommendation.classification.is_dev_dependency is True:
+        labels.append("dev")
+    return ", ".join(labels) if labels else "unknown"
+
+
+def _format_recommendations(recommendations: list) -> str:
+    """Format package recommendations for terminal output."""
+    if not recommendations:
+        return "No package recommendations available."
+
+    lines: list[str] = []
+    lines.append("Recommendations:")
+
+    for index, recommendation in enumerate(recommendations, 1):
+        impact_pct = round(recommendation.impact_score * 100)
+        lines.append("")
+        lines.append(f"{index}. {recommendation.package_key}")
+        lines.append(f"   Action: {recommendation.recommendation_type}")
+        lines.append(f"   Actionability: {recommendation.actionability}")
+        lines.append(f"   Reason confidence: {recommendation.reason_confidence}")
+        lines.append(f"   Impact: {impact_pct}%")
+        lines.append(f"   Classification: {_classification_summary(recommendation)}")
+        lines.append("   Why:")
+        for reason in recommendation.rationale[:2]:
+            lines.append(f"   - {reason}")
+
+    return "\n".join(lines)
+
+
 @click.group()
 def cli() -> None:
     """Depsly — dependency risk intelligence."""
@@ -255,6 +292,30 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
             click.echo(json_mod.dumps(output, indent=2))
         else:
             click.echo(_format_report(report))
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command()
+@click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--include-dev/--no-dev",
+    default=True,
+    help="Include devDependencies (default: yes).",
+)
+@click.option(
+    "--limit",
+    default=10,
+    type=int,
+    help="Max recommendations to show (default: 10).",
+)
+def recommend(lockfile: Path, include_dev: bool, limit: int) -> None:
+    """Recommend package actions for a package-lock.json file."""
+    try:
+        normalized = parse_package_lock(lockfile, include_dev=include_dev)
+        graph = build_graph(normalized)
+        recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
+        click.echo(_format_recommendations(recommendations))
     except Exception as e:
         raise click.ClickException(str(e))
 
