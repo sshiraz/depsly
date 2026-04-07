@@ -161,6 +161,15 @@ def _format_report(report: GraphReport) -> str:
         for key, count in top:
             lines.append(f"  - {key} ({count} deps)")
 
+    # Highest blast radius packages
+    blast = [(k, cnt, f) for k, cnt, f in report.top_packages_by_blast_radius if cnt > 0][:5]
+    if blast:
+        lines.append("")
+        lines.append("Highest blast radius packages:")
+        for i, (key, count, frac) in enumerate(blast, 1):
+            pct = round(frac * 100)
+            lines.append(f"  {i}. {key} -> affects {count} packages ({pct}%)")
+
     # Summary
     lines.append("")
     lines.append("Summary:")
