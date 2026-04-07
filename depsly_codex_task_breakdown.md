@@ -1,473 +1,148 @@
-# Depsly Codex Task Breakdown
+# Depsly Codex Task Breakdown (v2 — with Status)
 
-## Instructions for Codex
-
-This document breaks the Depsly roadmap into execution-ready tasks. Follow the repository's existing architectural constraints:
-- deterministic core only
-- do not duplicate logic
-- keep CLI thin
-- update tests with each meaningful change
-
-Each task should be implemented in a small, reviewable unit. Prefer one task per commit.
+## Principles
+- Deterministic core
+- No duplicated logic
+- Keep CLI thin
+- Test every change
 
 ---
 
-## Task 0: Inspect and align with existing code
+## ✅ Completed
 
-### Goal
-Understand current repo state before adding new logic.
+### Task 0 — Repo inspection/alignment
+Status: DONE
 
-### Actions
-- inspect `core/ingestion.py`
-- inspect `core/graph.py`
-- inspect `core/analyze.py`
-- inspect current CLI entrypoint
-- identify current dataclasses and helper functions
-- do not rewrite existing working code
+### Task 1 — Shared models
+- core/models.py
+- RemoveSimulationResult, PackageClassification, TraceResult, Recommendation
+Status: DONE
 
-### Deliverable
-Short implementation note:
-- what files already exist
-- what can be extended
-- what new files are actually needed
+### Task 2 — Reverse-edge + depth helpers
+- build_reverse_edges
+- parent_counts
+- shortest_depths_from_root
+Status: DONE
 
----
+### Task 3 — Classification
+- classify_package / classify_all_packages
+Status: DONE
 
-## Task 1: Stabilize shared models
+### Task 4 — Trace engine
+- core/trace.py
+- deterministic shortest paths
+Status: DONE
 
-### Goal
-Create or consolidate canonical shared dataclasses for simulation, classification, tracing, and recommendations.
+### Task 5 — Simulation standardization
+- core/simulate.py
+- single simulate_remove API
+Status: DONE
 
-### Files
-- modify `core/models.py` if it exists
-- otherwise create `core/models.py`
+### Task 6 — Feasibility scoring
+- compute_feasibility_score
+- tooling penalty added
+Status: DONE
 
-### Requirements
-Add dataclasses for:
-- `RemoveSimulationResult`
-- `PackageClassification`
-- `TraceResult`
-- `Recommendation`
-
-### Acceptance criteria
-- no business logic in model definitions
-- type hints present
-- no duplication of already-existing structures
-
-### Tests
-- minimal import smoke test if needed
+### Task 7 — Recommendation engine
+- core/recommend.py
+- impact * feasibility
+- action types: REMOVE / TRACE_UPSTREAM / REVIEW / DEFER
+- actionability + reason_confidence
+Status: DONE
 
 ---
 
-## Task 2: Build reverse-edge utilities
+## 🚧 In Progress / Next
 
-### Goal
-Support parent tracing and classification.
+### Task 8 — `recommend` CLI command
+Goal:
+Expose recommendation engine via CLI
 
-### Files
-- modify `core/graph.py`
+Command:
+    depsly recommend <lockfile>
 
-### Requirements
-Add:
-- `build_reverse_edges(graph) -> dict[str, set[str]]`
-- helper to compute parent counts
-- helper to compute shortest depth from root to every reachable node
-
-### Acceptance criteria
-- deterministic outputs
-- efficient reuse across modules
-
-### Tests
-Create/update tests covering:
-- parent counts
-- shortest depth correctness
-- missing root behavior
-
----
-
-## Task 3: Implement package classification
-
-### Goal
-Classify each package as direct, transitive, root, and dev where detectable.
-
-### Files
-- create `core/classify.py`
-- possibly modify ingestion if dev metadata is not preserved yet
-
-### Requirements
-Implement:
-- `classify_package(graph, package_key, normalized_data=None) -> PackageClassification`
-- `classify_all_packages(graph, normalized_data=None) -> dict[str, PackageClassification]`
-
-### Logic
-- `is_root`: package key equals root
-- `is_direct_dependency`: present directly under root dependencies
-- `is_transitive_dependency`: reachable from root and not direct/root
-- `is_dev_dependency`: use normalized manifest flag when available
-- `parent_count`: derived from reverse edges
-- `depth_from_root`: derived from shortest-depth map
-
-### Acceptance criteria
-- direct and transitive classification correct
-- deterministic
-- no CLI formatting here
-
-### Tests
-- direct dependency case
-- transitive dependency case
-- root case
-- missing package case
-- dev dependency case if supported
-
----
-
-## Task 4: Implement trace engine
-
-### Goal
-Explain why a transitive package exists.
-
-### Files
-- create `core/trace.py`
-
-### Requirements
-Implement:
-- `trace_package(graph, package_key, max_paths=3) -> TraceResult`
-
-### Behavior
-- find one or more shortest root-to-target paths
-- order by:
-  1. shortest path length
-  2. lexicographic tie-break
-- return tuple-of-tuples for deterministic immutability
-
-### Acceptance criteria
-- works for direct packages
-- works for transitive packages
-- returns clear path structure
-- deterministic path ordering
-
-### Tests
-- shortest path case
-- multiple path case
-- unreachable package case
-- direct dependency path case
-
----
-
-## Task 5: Refactor simulation result into shared model
-
-### Goal
-Standardize `simulate-remove` return type and keep simulation logic reusable by recommendations.
-
-### Files
-- create `core/simulate.py` if not already present
-- or modify existing simulation module
-- adjust CLI to consume shared result object
-
-### Requirements
-Implement or refactor:
-- `simulate_remove(graph, package_key) -> RemoveSimulationResult`
-
-### Output fields
-- package key
-- removed keys
-- removed count
-- before/after totals
-- percent removed
-- impacted packages
-- disclaimer
-
-### Acceptance criteria
-- current CLI behavior preserved or improved
-- ordering deterministic
-- suitable for programmatic reuse
-
-### Tests
-- simulation count correctness
-- before/after totals
-- percent calculation
-- stable impacted list order
-- package-not-found error
-
----
-
-## Task 6: Implement feasibility scoring
-
-### Goal
-Create a deterministic heuristic that estimates how actionable a package is.
-
-### Files
-- create `core/scoring.py`
-
-### Requirements
-Implement:
-- `compute_feasibility_score(graph, package_key, classification, fanout_map, depth_map) -> float`
-
-### V1 heuristic
-Start from `0.5` then:
-- `+0.25` if direct dependency
-- `+0.15` if dev dependency
-- `+0.10` if depth <= 1
-- `-0.20` if parent_count > 3
-- `-0.10` if depth >= 3
-- `-0.15` if fanout is very high
-
-Clamp to `[0.0, 1.0]`.
-
-### Acceptance criteria
-- deterministic
-- simple
-- explainable
-- easy to tune later
-
-### Tests
-- score stays in bounds
-- direct dependency gets better score than similar deep transitive one
-- heavily shared transitive package gets penalized
-
----
-
-## Task 7: Implement recommendation engine
-
-### Goal
-Rank packages by impact and feasibility.
-
-### Files
-- create `core/recommend.py`
-
-### Requirements
-Implement:
-- `recommend_packages(graph, normalized_data=None, limit=10) -> list[Recommendation]`
-
-### Algorithm
-For each reachable non-root package:
-1. run `simulate_remove`
-2. compute `impact_score = removed_count / total_nodes_before`
-3. compute classification
-4. compute feasibility
-5. compute `final_score = impact_score * feasibility_score`
-6. assign `recommendation_type`
-7. generate short rationales
-
-### Recommendation type heuristics
-- direct + high impact + feasibility >= moderate -> `REMOVE`
-- transitive + high impact + low feasibility -> `TRACE_UPSTREAM`
-- direct + high impact but build-tool style -> `REVIEW`
-- low impact -> `DEFER`
-
-### Acceptance criteria
-- result list sorted descending by final score
-- stable tie-break by package key
-- rationale strings concise and deterministic
-
-### Tests
-- ranking deterministic
-- direct high-impact package ranks above similar low-feasibility transitive package
-- empty graph handled
-- limit respected
-
----
-
-## Task 8: Add `recommend` CLI command
-
-### Goal
-Expose recommendation engine to end users.
-
-### Files
-- modify CLI entrypoint only
-- add formatting helpers if needed in `core/formatters.py` or CLI module
-
-### Command
-```bash
-depsly recommend path/to/package-lock.json
-```
-
-### Output requirements
-For top N recommendations show:
-- package key
-- impact percent
-- feasibility label
+Output fields:
+- package_key
+- action
+- actionability (HIGH/MEDIUM/LOW)
+- reason_confidence (HIGH/MEDIUM/LOW)
+- impact %
 - classification summary
-- recommendation type
-- 1-2 rationale bullets
+- rationale bullets
 
-### Acceptance criteria
-- command works end-to-end
-- formatting is readable
-- CLI remains thin and delegates to core logic
+Acceptance:
+- deterministic output
+- stable ordering
+- readable format
+- CLI thin (no business logic)
 
-### Tests
-- CLI integration test or snapshot test if repo already has CLI testing pattern
-- stable output ordering
+Tests:
+- CLI snapshot / integration
+- ordering stability
+- empty graph
 
----
-
-## Task 9: Add `trace` CLI command
-
-### Goal
-Expose path tracing to end users.
-
-### Files
-- modify CLI entrypoint
-- reuse `core/trace.py`
-
-### Command
-```bash
-depsly trace path/to/package-lock.json package@version
-```
-
-### Output requirements
-- show 1 to 3 root-to-target paths
-- stable formatting
-- clear message when package is not reachable from root
-
-### Acceptance criteria
-- direct dependency trace works
-- transitive dependency trace works
-- multiple paths displayed deterministically
-
-### Tests
-- CLI command test
-- package-not-found case
+Status: NEXT
 
 ---
 
-## Task 10: Improve analyze output with classification-aware insights
+### Task 9 — `trace` CLI command
+Command:
+    depsly trace <lockfile> <package>
 
-### Goal
-Make analysis more actionable without changing its core purpose.
+Output:
+- 1–3 shortest root→target paths
+- deterministic ordering
 
-### Files
-- CLI formatter and/or analysis formatter
-
-### Requirements
-Where applicable:
-- clearly label whether highest blast-radius packages are direct or transitive
-- avoid implying transitive packages are directly removable
-- optionally show a hint:
-  - "Use `depsly trace <package>` to see why this package exists."
-  - "Use `depsly recommend` for prioritized actions."
-
-### Acceptance criteria
-- more realistic wording
-- no major change to underlying analysis calculations
+Status: NEXT (after recommend CLI)
 
 ---
 
-## Task 11: Add scoring version to output
+## 🔜 Upcoming
 
-### Goal
-Prepare for future formula evolution without losing trust.
+### Task 10 — Analyze output improvements
+- label direct vs transitive in output
+- suggest next commands (recommend/trace)
 
-### Files
-- `core/scoring.py`
-- CLI output logic
+### Task 11 — Scoring version
+- expose scoring version (e.g., v1)
 
-### Requirements
-Expose scoring version string, e.g. `v1`.
+### Task 12 — Performance pass
+- cache subtree sizes
+- reuse reverse edges / depth map
 
-### Acceptance criteria
-- visible in `recommend` output
-- easy to bump later
+### Task 13 — Docs update
+- README
+- feature list
+- CLI commands
 
----
-
-## Task 12: Performance pass for recommendations
-
-### Goal
-Avoid expensive repeated traversals if recommendation performance becomes poor on large graphs.
-
-### Files
-- `core/recommend.py`
-- `core/graph.py`
-- maybe `core/scoring.py`
-
-### Requirements
-Profile or reason through repeated work and cache:
-- subtree sizes or removed sets where helpful
-- reverse edges
-- depth map
-- fanout map
-
-### Acceptance criteria
-- no unnecessary repeated full-graph scans where avoidable
-- implementation remains readable
-
-### Tests
-- existing tests still pass
-- optional benchmark harness if repo already uses one
+### Task 14 — simulate-replace design note
+- no implementation yet
 
 ---
 
-## Task 13: Documentation updates
+## 🧠 Current Architecture
 
-### Goal
-Keep repo docs aligned with new capabilities.
-
-### Files
-- `README.md`
-- `MASTER_FEATURE_LIST.md`
-- `ROADMAP.md`
-- `DEV_LOG.md`
-- `DECISIONS.md`
-- possibly `ARCHITECTURE.md`
-
-### Requirements
-Document:
-- new commands: `recommend`, `trace`
-- classification and feasibility concepts
-- structural-only disclaimer
-- scoring version
-
-### Acceptance criteria
-- docs reflect actual shipped behavior
-- no mention of unimplemented features as if complete
+graph → classify → simulate → scoring → recommend → CLI
 
 ---
 
-## Task 14: Optional next milestone planning for `simulate-replace`
+## 🎯 Current Goal
 
-### Goal
-Prepare the next major feature without overbuilding now.
+Ship:
+    depsly recommend <lockfile>
 
-### Files
-- no heavy implementation unless requested
-- create design note only
-
-### Requirements
-Write a short internal design note covering:
-- command shape
-- structural assumptions
-- whether replacement graph is heuristic or resolved from alternate lockfile
-
-### Acceptance criteria
-- clear enough to implement later
-- no speculative code unless requested
+and ensure output is:
+- believable
+- actionable
+- non-noisy
 
 ---
 
-## Suggested commit order
+## Notes
 
-1. shared models
-2. reverse-edge utilities
-3. classification
-4. trace engine
-5. simulation refactor
-6. feasibility scoring
-7. recommendation engine
-8. `recommend` CLI
-9. `trace` CLI
-10. analyze output improvements
-11. scoring version
-12. perf pass
-13. docs
-14. replace design note
+- scoring currently uses: impact * feasibility
+- feasibility includes tooling penalty
+- actionability is derived from feasibility
+- reason_confidence reflects data completeness
 
----
-
-## Final instruction to Codex
-
-Do not rewrite working graph or analysis code unless needed.
-Prefer extending the current deterministic engine.
-Keep logic in core modules, not in CLI formatting.
-Every task must include or update tests.
+Keep tuning minimal — prioritize real usage feedback.
