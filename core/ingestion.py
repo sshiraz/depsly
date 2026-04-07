@@ -71,6 +71,7 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
     name_to_key: dict[str, str] = {}
     normalized: dict[str, dict] = {}
     root_key: str | None = None
+    root_dev_dependency_names: set[str] = set()
 
     for path, info in packages.items():
         name = info.get("name") or _name_from_path(path)
@@ -83,6 +84,7 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
 
         if path == "":
             root_key = key
+            root_dev_dependency_names = set(info.get("devDependencies", {}))
 
         name_to_key[name] = key
 
@@ -111,7 +113,19 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
         if unresolved:
             entry["unresolved_dependencies"] = unresolved
 
-    return {"root": root_key, "packages": normalized}
+    root_dev_dependency_keys = tuple(
+        sorted(
+            name_to_key[dep_name]
+            for dep_name in root_dev_dependency_names
+            if dep_name in name_to_key
+        )
+    )
+
+    return {
+        "root": root_key,
+        "packages": normalized,
+        "root_dev_dependency_keys": root_dev_dependency_keys,
+    }
 
 
 def _name_from_path(path: str) -> str:

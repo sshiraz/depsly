@@ -7,12 +7,15 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.graph import (
+    build_reverse_edges,
     build_graph,
     collect_transitive_deps,
     graph_stats,
     has_cycle,
     max_depth,
+    parent_counts,
     simulate_remove_package,
+    shortest_depths_from_root,
     traverse_bfs,
     traverse_dfs,
     GraphBuildError,
@@ -301,6 +304,67 @@ class TestStats:
         assert stats["total_edges"] == 5
         assert stats["max_depth"] == 3
         assert stats["has_cycle"] is False
+
+
+# ---------------------------------------------------------------------------
+# Reverse edges / shortest depth tests
+# ---------------------------------------------------------------------------
+
+class TestReverseEdgeUtilities:
+    def test_build_reverse_edges_simple(self):
+        g = build_graph(simple_graph_data())
+        reverse = build_reverse_edges(g)
+        assert reverse["app@1.0.0"] == set()
+        assert reverse["react@18.2.0"] == {"app@1.0.0"}
+        assert reverse["lodash@4.17.21"] == {"app@1.0.0"}
+
+    def test_build_reverse_edges_shared_node(self):
+        g = build_graph(shared_transitive_data())
+        reverse = build_reverse_edges(g)
+        assert reverse["C@1.0.0"] == {"A@1.0.0", "B@1.0.0"}
+        assert reverse["D@1.0.0"] == {"C@1.0.0"}
+
+    def test_parent_counts(self):
+        g = build_graph(shared_transitive_data())
+        counts = parent_counts(g)
+        assert counts["app@1.0.0"] == 0
+        assert counts["A@1.0.0"] == 1
+        assert counts["B@1.0.0"] == 1
+        assert counts["C@1.0.0"] == 2
+        assert counts["D@1.0.0"] == 1
+
+
+class TestShortestDepths:
+    def test_shortest_depths_simple(self):
+        g = build_graph(simple_graph_data())
+        depths = shortest_depths_from_root(g)
+        assert depths == {
+            "app@1.0.0": 0,
+            "lodash@4.17.21": 1,
+            "react@18.2.0": 1,
+        }
+
+    def test_shortest_depths_shared_node(self):
+        g = build_graph(shared_transitive_data())
+        depths = shortest_depths_from_root(g)
+        assert depths["app@1.0.0"] == 0
+        assert depths["A@1.0.0"] == 1
+        assert depths["B@1.0.0"] == 1
+        assert depths["C@1.0.0"] == 2
+        assert depths["D@1.0.0"] == 3
+
+    def test_shortest_depths_with_cycle(self):
+        g = build_graph(cycle_data())
+        depths = shortest_depths_from_root(g)
+        assert depths == {
+            "a@1.0.0": 0,
+            "b@1.0.0": 1,
+            "c@1.0.0": 2,
+        }
+
+    def test_shortest_depths_missing_root(self):
+        g = build_graph({"root": "missing@1.0.0", "packages": simple_graph_data()["packages"]})
+        assert shortest_depths_from_root(g) == {}
 
 
 # ---------------------------------------------------------------------------

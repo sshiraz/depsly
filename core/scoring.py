@@ -1,4 +1,4 @@
-"""Project-level risk scoring from structural graph metrics.
+"""Score computation from structural graph metrics and package facts.
 
 Pure policy module — no I/O, no LLM, no external calls.
 All thresholds and point assignments live here.
@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.analyze import GraphReport
+from core.graph import DependencyGraph, simulate_remove_package
+from core.models import PackageClassification
 
 
 @dataclass
@@ -37,6 +39,67 @@ def _label_for_score(score: int) -> str:
     if score >= 25:
         return "MODERATE"
     return "LOW"
+
+
+def _clamp_unit(value: float) -> float:
+    """Clamp a score to the inclusive [0.0, 1.0] range."""
+    return max(0.0, min(value, 1.0))
+
+
+def compute_impact_score(graph: DependencyGraph, package_key: str) -> float:
+    """Compute structural impact as the reachable share removed by deleting a package."""
+    if package_key not in graph.nodes:
+        return 0.0
+
+    total_before = len(graph.nodes)
+    if total_before == 0:
+        return 0.0
+
+    after = simulate_remove_package(graph, package_key)
+    removed_count = total_before - len(after.nodes)
+    return removed_count / total_before
+
+
+def compute_feasibility_score(
+    graph: DependencyGraph,
+    package_key: str,
+    classification: PackageClassification,
+) -> float:
+    """Compute a deterministic feasibility heuristic for acting on a package."""
+    if package_key not in graph.nodes:
+        return 0.0
+
+    node = graph.nodes[package_key]
+    score = 0.5
+
+    if classification.is_direct_dependency:
+        score += 0.25
+    if classification.is_dev_dependency is True:
+        score += 0.15
+
+    depth = classification.depth_from_root
+    if depth is not None and depth <= 1:
+        score += 0.10
+    if depth is not None and depth >= 3:
+        score -= 0.10
+
+    if classification.parent_count > 3:
+        score -= 0.20
+    if len(node.dependencies) >= 10:
+        score -= 0.15
+
+    return _clamp_unit(score)
+
+
+def compute_package_score(
+    graph: DependencyGraph,
+    package_key: str,
+    classification: PackageClassification,
+) -> float:
+    """Combine structural impact and feasibility into a package action score."""
+    impact = compute_impact_score(graph, package_key)
+    feasibility = compute_feasibility_score(graph, package_key, classification)
+    return impact * feasibility
 
 
 def score_project(report: GraphReport) -> ProjectScore:

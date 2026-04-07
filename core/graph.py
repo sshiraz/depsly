@@ -206,6 +206,49 @@ def collect_transitive_deps(graph: DependencyGraph, start_key: str | None = None
     return visited
 
 
+def build_reverse_edges(graph: DependencyGraph) -> dict[str, set[str]]:
+    """Return a reverse-edge map of package_key -> parent package keys.
+
+    Reuses the graph's canonical dependent links rather than rebuilding
+    parent relationships from scratch.
+    """
+    return {
+        key: {parent.key for parent in node.dependents}
+        for key, node in graph.nodes.items()
+    }
+
+
+def parent_counts(graph: DependencyGraph) -> dict[str, int]:
+    """Return the number of direct parents for each package."""
+    reverse_edges = build_reverse_edges(graph)
+    return {key: len(parents) for key, parents in reverse_edges.items()}
+
+
+def shortest_depths_from_root(graph: DependencyGraph) -> dict[str, int]:
+    """Return shortest depth from root to each reachable node.
+
+    Root depth is 0. If the graph has no valid root, returns an empty dict.
+    Uses BFS, which is cycle-safe and yields shortest path lengths in an
+    unweighted graph.
+    """
+    start = graph.root_key
+    if start is None or start not in graph.nodes:
+        return {}
+
+    depths: dict[str, int] = {start: 0}
+    queue: deque[PackageNode] = deque([graph.nodes[start]])
+
+    while queue:
+        node = queue.popleft()
+        next_depth = depths[node.key] + 1
+        for dep in sorted(node.dependencies, key=lambda child: child.key):
+            if dep.key not in depths:
+                depths[dep.key] = next_depth
+                queue.append(dep)
+
+    return depths
+
+
 # ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------

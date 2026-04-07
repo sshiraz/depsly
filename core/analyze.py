@@ -194,18 +194,19 @@ def analyze_removal_impact(
     # Nodes removed from the graph entirely (not just unreachable)
     removed_subgraph_node_count = before.total_nodes - after.total_nodes
 
-    # Top impacted packages: direct dependents of the removed package,
-    # ranked by how many packages they lost from their subtree.
+    # Top impacted packages: direct dependents of the removed package.
+    #
+    # Any node lost from the reachable graph after removing package_key is
+    # necessarily in the removed package's downstream subgraph. Since each
+    # direct dependent reaches that lost subgraph through package_key, they
+    # all lose the same set of affected nodes. Reuse the already-computed
+    # affected set rather than traversing the graph once per dependent.
     top_impacted: list[tuple[str, int]] = []
     node = graph.get(package_key)
     if node is not None:
         for dependent in node.dependents:
-            # Count nodes reachable from this dependent in the original
-            # that are no longer present after removal
-            orig_reachable = set(traverse_bfs(graph, dependent.key))
-            lost = orig_reachable & affected_keys
-            if lost:
-                top_impacted.append((dependent.key, len(lost)))
+            if affected_keys:
+                top_impacted.append((dependent.key, len(affected_keys)))
         # Sort: most lost desc, then key asc for deterministic ties
         top_impacted.sort(key=lambda x: (-x[1], x[0]))
         top_impacted = top_impacted[:5]
