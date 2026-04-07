@@ -85,12 +85,12 @@ class TestFeasibilityScore:
         score = compute_feasibility_score(graph, "typescript@5.3.3", classification)
         assert 0.0 <= score <= 1.0
 
-    def test_direct_dev_scores_higher_than_similar_non_dev_direct(self):
+    def test_direct_dev_tooling_can_match_non_dev_direct(self):
         normalized = parse_package_lock(DEV_DEPS_LOCKFILE)
         graph = build_graph(normalized)
         direct_prod = classify_package(graph, "react@18.2.0", normalized)
         direct_dev = classify_package(graph, "typescript@5.3.3", normalized)
-        assert compute_feasibility_score(graph, "typescript@5.3.3", direct_dev) > (
+        assert compute_feasibility_score(graph, "typescript@5.3.3", direct_dev) == (
             compute_feasibility_score(graph, "react@18.2.0", direct_prod)
         )
 
@@ -100,6 +100,28 @@ class TestFeasibilityScore:
         transitive = classify_package(graph, "shared@1.0.0")
         assert compute_feasibility_score(graph, "direct@1.0.0", direct) > (
             compute_feasibility_score(graph, "shared@1.0.0", transitive)
+        )
+
+    def test_tooling_package_gets_soft_penalty(self):
+        normalized = parse_package_lock(json.dumps({
+            "name": "my-app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "my-app",
+                    "version": "1.0.0",
+                    "dependencies": {"react": "^18.2.0", "vite": "^8.0.0"},
+                },
+                "node_modules/react": {"version": "18.2.0"},
+                "node_modules/vite": {"version": "8.0.3"},
+            },
+        }))
+        graph = build_graph(normalized)
+        vite = classify_package(graph, "vite@8.0.3", normalized)
+        react = classify_package(graph, "react@18.2.0", normalized)
+        assert compute_feasibility_score(graph, "vite@8.0.3", vite) < (
+            compute_feasibility_score(graph, "react@18.2.0", react)
         )
 
 

@@ -13,6 +13,19 @@ from core.graph import DependencyGraph
 from core.models import PackageClassification
 from core.simulate import simulate_remove
 
+_TOOLING_KEYWORDS = (
+    "eslint",
+    "typescript",
+    "vite",
+    "webpack",
+    "babel",
+    "jest",
+    "rollup",
+    "prettier",
+    "ts-node",
+    "@types/",
+)
+
 
 @dataclass
 class ScoreComponent:
@@ -53,6 +66,12 @@ def compute_impact_score(graph: DependencyGraph, package_key: str) -> float:
     return result.percent_removed
 
 
+def looks_like_tooling_package(package_key: str) -> bool:
+    """Heuristic for packages that are more likely to require review than removal."""
+    key = package_key.lower()
+    return any(keyword in key for keyword in _TOOLING_KEYWORDS)
+
+
 def compute_feasibility_score(
     graph: DependencyGraph,
     package_key: str,
@@ -79,6 +98,8 @@ def compute_feasibility_score(
     if classification.parent_count > 3:
         score -= 0.20
     if len(node.dependencies) >= 10:
+        score -= 0.15
+    if looks_like_tooling_package(package_key):
         score -= 0.15
 
     return _clamp_unit(score)

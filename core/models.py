@@ -56,6 +56,8 @@ class Recommendation:
 
     package_key: str
     recommendation_type: str
+    actionability: str
+    reason_confidence: str
     impact_score: float
     feasibility_score: float
     final_score: float
