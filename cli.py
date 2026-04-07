@@ -338,7 +338,14 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
         lines.append("Impact:")
 
         node_diff = before.total_nodes - after.total_nodes
-        lines.append(f"  - {node_diff} packages removed from the reachable graph")
+        pct = round(node_diff / before.total_nodes * 100) if before.total_nodes > 0 else 0
+        lines.append(f"  - {node_diff} packages removed from the reachable graph ({pct}%)")
+
+        if pct >= 40:
+            lines.append(
+                f"  - High impact: removing {package_key} removes "
+                f"{pct}% of the dependency graph"
+            )
 
         depth_diff = before.max_depth - after.max_depth
         if depth_diff > 0:
@@ -355,6 +362,9 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
             lines.append(f"  - Transitive dependency count increased by {-trans_diff}")
         else:
             lines.append("  - Transitive dependency count unchanged")
+
+        lines.append("")
+        lines.append("Structural simulation only. Does not guarantee install, build, or runtime correctness.")
 
         click.echo("\n".join(lines))
     except click.ClickException:
