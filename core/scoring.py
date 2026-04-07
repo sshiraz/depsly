@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.analyze import GraphReport
-from core.graph import DependencyGraph, simulate_remove_package
+from core.graph import DependencyGraph
 from core.models import PackageClassification
+from core.simulate import simulate_remove
 
 
 @dataclass
@@ -48,16 +49,8 @@ def _clamp_unit(value: float) -> float:
 
 def compute_impact_score(graph: DependencyGraph, package_key: str) -> float:
     """Compute structural impact as the reachable share removed by deleting a package."""
-    if package_key not in graph.nodes:
-        return 0.0
-
-    total_before = len(graph.nodes)
-    if total_before == 0:
-        return 0.0
-
-    after = simulate_remove_package(graph, package_key)
-    removed_count = total_before - len(after.nodes)
-    return removed_count / total_before
+    result = simulate_remove(graph, package_key)
+    return result.percent_removed
 
 
 def compute_feasibility_score(

@@ -11,6 +11,7 @@ from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.scoring import score_project
+from core.simulate import simulate_remove as simulate_remove_result
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
@@ -271,9 +272,10 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        simulation = simulate_remove_result(graph, package_key)
         result = analyze_removal_impact(graph, package_key)
 
-        if not result.package_found:
+        if not simulation.package_found:
             raise click.ClickException(
                 f"Package '{package_key}' not found in the dependency graph."
             )
@@ -296,8 +298,8 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
         lines.append("")
         lines.append("Impact:")
 
-        node_diff = before.total_nodes - after.total_nodes
-        pct = round(node_diff / before.total_nodes * 100) if before.total_nodes > 0 else 0
+        node_diff = simulation.removed_count
+        pct = round(simulation.percent_removed * 100)
         lines.append(f"  - {node_diff} packages removed from the reachable graph ({pct}%)")
 
         if pct >= 40:
@@ -325,14 +327,14 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
         else:
             lines.append("  - Transitive dependency count unchanged")
 
-        if result.top_impacted_packages:
+        if simulation.impacted_packages:
             lines.append("")
             lines.append("Top impacted packages:")
-            for key, lost in result.top_impacted_packages:
+            for key, lost in simulation.impacted_packages:
                 lines.append(f"  - {key} -> {lost} packages lost")
 
         lines.append("")
-        lines.append("Structural simulation only. Does not guarantee install, build, or runtime correctness.")
+        lines.append(simulation.disclaimer)
 
         click.echo("\n".join(lines))
     except click.ClickException:

@@ -95,6 +95,16 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Added a human-readable "Highest blast radius packages" section to CLI output.
 - Brought blast-radius analysis to parity between JSON and terminal output.
 
+## 2026-04-07
+
+### `a3714d8` Add classification and package scoring foundations
+- Added shared core dataclasses for simulation, classification, tracing, and recommendations in `core/models.py`.
+- Added reusable graph helpers for reverse-edge maps, parent counts, and shortest depths from root.
+- Extended ingestion to preserve deterministic root dev-dependency metadata for downstream classification.
+- Added `core/classify.py` for deterministic package classification using graph facts plus optional ingestion metadata.
+- Extended `core/scoring.py` with package-level impact, feasibility, and combined package score computation while preserving existing project scoring behavior.
+- Added tests covering shared models, graph helpers, classification, and package-level scoring.
+
 ## Summary of Implemented Feature Areas
 
 - Backend/API scaffold
@@ -107,3 +117,5 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Blast radius analysis
 - Removal simulation / what-if analysis
 - Human-readable and JSON reporting
+- Package classification
+- Package-level scoring

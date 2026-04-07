@@ -7,9 +7,14 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 ## Implemented Core
 - [x] Dependency graph builder
 - [x] Graph traversal, cycle detection, and depth analysis
+- [x] Reverse-edge utilities and parent counts
+- [x] Shortest-depth computation from root
 - [x] `package-lock.json` v2/v3 ingestion
 - [x] Structural graph analysis via `GraphReport`
 - [x] Deterministic project risk scoring
+- [x] Shared core models for simulation, classification, tracing, and recommendations
+- [x] Package classification engine
+- [x] Package-level scoring primitives
 
 ## Implemented Product Features
 - [x] Installable CLI with `depsly analyze`
@@ -19,6 +24,10 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 - [x] JSON output for machine-readable analysis
 
 ## Planned / Not Yet Implemented
+- [ ] Trace engine
+- [ ] Recommendation engine
+- [ ] `depsly trace` CLI command
+- [ ] `depsly recommend` CLI command
 - [ ] History tracking
 - [ ] Safety drift analysis
 - [ ] Monitoring and alerts

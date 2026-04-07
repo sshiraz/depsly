@@ -6,7 +6,9 @@ tracing, and recommendation features that sit above the graph engine.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from core.graph import DependencyGraph
 
 
 @dataclass(frozen=True)
@@ -17,11 +19,12 @@ class RemoveSimulationResult:
     package_found: bool
     removed_keys: tuple[str, ...]
     removed_count: int
-    before_total_nodes: int
-    after_total_nodes: int
+    total_nodes_before: int
+    total_nodes_after: int
     percent_removed: float
     impacted_packages: tuple[tuple[str, int], ...]
     disclaimer: str
+    simulated_graph: DependencyGraph = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -58,4 +61,3 @@ class Recommendation:
     final_score: float
     rationale: tuple[str, ...]
     classification: PackageClassification
-

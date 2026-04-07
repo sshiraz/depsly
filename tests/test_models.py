@@ -5,6 +5,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from core.graph import DependencyGraph
 from core.models import (
     PackageClassification,
     Recommendation,
@@ -36,11 +37,12 @@ def test_shared_models_import_and_construct():
         package_found=True,
         removed_keys=("react@18.2.0",),
         removed_count=1,
-        before_total_nodes=3,
-        after_total_nodes=2,
+        total_nodes_before=3,
+        total_nodes_after=2,
         percent_removed=1 / 3,
         impacted_packages=(("app@1.0.0", 1),),
         disclaimer="Structural simulation only.",
+        simulated_graph=DependencyGraph(),
     )
 
     recommendation = Recommendation(

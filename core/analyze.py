@@ -12,9 +12,8 @@ from core.graph import (
     DependencyGraph,
     collect_transitive_deps,
     graph_stats,
-    simulate_remove_package,
-    traverse_bfs,
 )
+from core.simulate import simulate_remove
 
 
 @dataclass
@@ -180,44 +179,16 @@ def analyze_removal_impact(
     then derives impact metrics from the difference.
     """
     before = analyze_graph(graph)
-    package_found = package_key in graph.nodes
-
-    simulated = simulate_remove_package(graph, package_key)
-    after = analyze_graph(simulated)
-
-    # Nodes present before but absent after
-    before_keys = set(traverse_bfs(graph))
-    after_keys = set(traverse_bfs(simulated))
-    affected_keys = before_keys - after_keys
-    affected_node_count = len(affected_keys)
-
-    # Nodes removed from the graph entirely (not just unreachable)
-    removed_subgraph_node_count = before.total_nodes - after.total_nodes
-
-    # Top impacted packages: direct dependents of the removed package.
-    #
-    # Any node lost from the reachable graph after removing package_key is
-    # necessarily in the removed package's downstream subgraph. Since each
-    # direct dependent reaches that lost subgraph through package_key, they
-    # all lose the same set of affected nodes. Reuse the already-computed
-    # affected set rather than traversing the graph once per dependent.
-    top_impacted: list[tuple[str, int]] = []
-    node = graph.get(package_key)
-    if node is not None:
-        for dependent in node.dependents:
-            if affected_keys:
-                top_impacted.append((dependent.key, len(affected_keys)))
-        # Sort: most lost desc, then key asc for deterministic ties
-        top_impacted.sort(key=lambda x: (-x[1], x[0]))
-        top_impacted = top_impacted[:5]
+    simulation = simulate_remove(graph, package_key)
+    after = analyze_graph(simulation.simulated_graph)
 
     return RemovalSimulationReport(
         package_key=package_key,
-        package_found=package_found,
-        affected_node_count=affected_node_count,
-        removed_subgraph_node_count=removed_subgraph_node_count,
+        package_found=simulation.package_found,
+        affected_node_count=simulation.removed_count,
+        removed_subgraph_node_count=simulation.removed_count,
         before_report=before,
         after_report=after,
         risk_delta=None,
-        top_impacted_packages=top_impacted,
+        top_impacted_packages=list(simulation.impacted_packages),
     )
