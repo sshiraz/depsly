@@ -11,5 +11,25 @@ Most dependency tools focus only on vulnerabilities or compliance, not real deci
 - Tracks safety drift over time
 - Supports pre- and post-adoption workflows
 
+## Install
+
+With `pipx`:
+
+```bash
+pipx install .
+```
+
+If your default `pipx` Python is older than `3.11`, install with:
+
+```bash
+pipx install --python python3.11 .
+```
+
+After install:
+
+```bash
+depsly --help
+```
+
 ## Docs
 See DOCUMENTATION_INDEX.md
