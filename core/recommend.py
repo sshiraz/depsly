@@ -31,7 +31,13 @@ def recommend_packages(
         simulation = simulate_remove(graph, package_key)
         impact_score = simulation.percent_removed
         feasibility_score = compute_feasibility_score(graph, package_key, classification)
-        final_score = compute_package_score(graph, package_key, classification)
+        final_score = compute_package_score(
+            graph,
+            package_key,
+            classification,
+            impact_score=impact_score,
+            feasibility_score=feasibility_score,
+        )
         recommendation_type = _recommendation_type(
             package_key,
             classification.is_direct_dependency,

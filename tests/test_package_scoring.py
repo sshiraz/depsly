@@ -4,6 +4,7 @@ import json
 import os
 import sys
 
+import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.classify import classify_package
@@ -14,6 +15,7 @@ from core.scoring import (
     compute_impact_score,
     compute_package_score,
 )
+import core.scoring as scoring_module
 
 
 def shared_graph_data():
@@ -134,3 +136,22 @@ class TestPackageScore:
             compute_impact_score(graph, "direct@1.0.0")
             * compute_feasibility_score(graph, "direct@1.0.0", classification)
         )
+
+    def test_package_score_reuses_supplied_scores_without_resimulating(self, monkeypatch):
+        graph = build_graph(shared_graph_data())
+        classification = classify_package(graph, "direct@1.0.0")
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("simulate_remove should not be called when impact_score is supplied")
+
+        monkeypatch.setattr(scoring_module, "simulate_remove", fail_if_called)
+
+        score = compute_package_score(
+            graph,
+            "direct@1.0.0",
+            classification,
+            impact_score=0.2,
+            feasibility_score=0.75,
+        )
+
+        assert score == pytest.approx(0.15)

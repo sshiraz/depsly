@@ -111,10 +111,17 @@ def compute_package_score(
     graph: DependencyGraph,
     package_key: str,
     classification: PackageClassification,
+    *,
+    impact_score: float | None = None,
+    feasibility_score: float | None = None,
 ) -> float:
     """Combine structural impact and feasibility into a package action score."""
-    impact = compute_impact_score(graph, package_key)
-    feasibility = compute_feasibility_score(graph, package_key, classification)
+    impact = impact_score if impact_score is not None else compute_impact_score(graph, package_key)
+    feasibility = (
+        feasibility_score
+        if feasibility_score is not None
+        else compute_feasibility_score(graph, package_key, classification)
+    )
     return impact * feasibility
 
 

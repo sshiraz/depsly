@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
+import core.recommend as recommend_module
+from core.simulate import simulate_remove as simulate_remove_result
 
 
 def recommendation_graph_data():
@@ -132,3 +134,23 @@ class TestRecommendPackages:
         graph = build_graph(recommendation_graph_data())
         with pytest.raises(ValueError, match="limit must be >= 0"):
             recommend_packages(graph, limit=-1)
+
+    def test_recommendations_simulate_each_package_once(self, monkeypatch):
+        graph = build_graph(recommendation_graph_data())
+        calls: list[str] = []
+
+        def counting_simulate(graph_obj, package_key):
+            calls.append(package_key)
+            return simulate_remove_result(graph_obj, package_key)
+
+        monkeypatch.setattr(recommend_module, "simulate_remove", counting_simulate)
+
+        recommendations = recommend_packages(graph)
+
+        expected = sorted(
+            key for key in graph.nodes
+            if key != graph.root_key
+        )
+        assert sorted(calls) == expected
+        assert len(calls) == len(expected)
+        assert recommendations
