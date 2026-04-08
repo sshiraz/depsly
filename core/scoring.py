@@ -13,6 +13,8 @@ from core.graph import DependencyGraph
 from core.models import PackageClassification
 from core.simulate import simulate_remove
 
+PACKAGE_SCORING_VERSION = "v1"
+
 _TOOLING_KEYWORDS = (
     "eslint",
     "typescript",

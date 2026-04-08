@@ -51,6 +51,8 @@ def test_shared_models_import_and_construct():
         impact_score=0.5,
         feasibility_score=0.75,
         final_score=0.375,
+        actionability="MEDIUM",
+        reason_confidence="HIGH",
         rationale=("Direct dependency", "Moderate blast radius"),
         classification=classification,
     )
@@ -58,3 +60,5 @@ def test_shared_models_import_and_construct():
     assert trace.paths[0][-1] == "react@18.2.0"
     assert simulation.removed_count == 1
     assert recommendation.classification.is_direct_dependency is True
+    assert recommendation.actionability == "MEDIUM"
+    assert recommendation.reason_confidence == "HIGH"

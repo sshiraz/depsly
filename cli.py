@@ -8,10 +8,11 @@ from pathlib import Path
 import click
 
 from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
+from core.classify import classify_all_packages
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
-from core.scoring import score_project
+from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
 from core.trace import trace_package
 
@@ -67,7 +68,21 @@ def _build_summary(report: GraphReport) -> str:
     return summary
 
 
-def _format_report(report: GraphReport) -> str:
+def _package_scope_label(classification) -> str:
+    """Format direct/transitive labeling for human output."""
+    if classification and classification.is_direct_dependency:
+        return "direct"
+    if classification and classification.is_transitive_dependency:
+        return "transitive"
+    return "unknown"
+
+
+def _format_report(
+    report: GraphReport,
+    *,
+    classifications: dict | None = None,
+    lockfile: Path | None = None,
+) -> str:
     """Format a GraphReport into human-readable output."""
     lines: list[str] = []
 
@@ -169,9 +184,12 @@ def _format_report(report: GraphReport) -> str:
     if blast:
         lines.append("")
         lines.append("Highest blast radius packages:")
+        lines.append("  Direct packages are usually actionable; transitive packages often need tracing upstream.")
         for i, (key, count, frac) in enumerate(blast, 1):
             pct = round(frac * 100)
-            lines.append(f"  {i}. {key} -> affects {count} packages ({pct}%)")
+            classification = classifications.get(key) if classifications else None
+            scope = _package_scope_label(classification)
+            lines.append(f"  {i}. {key} [{scope}] -> affects {count} packages ({pct}%)")
 
     # Summary
     lines.append("")
@@ -196,27 +214,131 @@ def _format_report(report: GraphReport) -> str:
         for action in actions:
             lines.append(f"  - {action}")
 
+    if lockfile is not None:
+        transitive_target = None
+        if classifications:
+            for key, _, _ in blast:
+                classification = classifications.get(key)
+                if classification and classification.is_transitive_dependency:
+                    transitive_target = key
+                    break
+        lines.append("")
+        lines.append("Next steps:")
+        lines.append(f"  - Use `depsly recommend {lockfile}` for prioritized actions.")
+        if transitive_target:
+            lines.append(f"  - Use `depsly trace {lockfile} {transitive_target}` to see why this transitive package exists.")
+
     return "\n".join(lines)
 
 
 def _classification_summary(recommendation) -> str:
     """Build a short classification summary for a recommendation."""
-    labels: list[str] = []
+    if recommendation.classification.is_direct_dependency and recommendation.classification.is_dev_dependency is True:
+        return "Direct (dev dependency)"
     if recommendation.classification.is_direct_dependency:
-        labels.append("direct")
+        return "Direct"
+    if recommendation.classification.is_transitive_dependency:
+        return "Transitive"
+    return "Unknown"
+
+
+def _display_reasons(recommendation) -> list[str]:
+    """Build slightly more concrete user-facing rationale lines."""
+    reasons: list[str] = []
+
+    if recommendation.classification.is_direct_dependency and recommendation.classification.is_dev_dependency is True:
+        reasons.append("Direct dev dependency (user-controlled)")
+    elif recommendation.classification.is_direct_dependency:
+        reasons.append("Direct dependency (user-controlled)")
     elif recommendation.classification.is_transitive_dependency:
-        labels.append("transitive")
-    if recommendation.classification.is_dev_dependency is True:
-        labels.append("dev")
-    return ", ".join(labels) if labels else "unknown"
+        reasons.append("Transitive dependency (introduced by parent package)")
+
+    impact_pct = round(recommendation.impact_score * 100)
+    removed_count_hint = None
+    for reason in recommendation.rationale:
+        if "packages)" in reason:
+            removed_count_hint = reason.split("(")[-1].rstrip(")")
+            break
+    if removed_count_hint:
+        reasons.append(f"Structural impact: {impact_pct}% ({removed_count_hint})")
+    else:
+        reasons.append(f"Structural impact: {impact_pct}%")
+
+    if recommendation.recommendation_type == "DEFER":
+        reasons.append("Easy to change, but low payoff right now")
+    elif recommendation.recommendation_type == "TRACE_UPSTREAM":
+        reasons.append("Trace upstream before treating as directly removable")
+    elif recommendation.reason_confidence == "HIGH":
+        reasons.append("Strong structural signal")
+
+    return reasons[:2]
 
 
-def _format_recommendations(recommendations: list) -> str:
+def _recommended_focus(recommendations: list) -> str:
+    """Summarize how much immediate attention the top recommendation deserves."""
+    top = recommendations[0]
+    if top.impact_score >= 0.2:
+        return "HIGH"
+    if top.impact_score >= 0.08:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _recommendation_summary(recommendations: list) -> list[str]:
+    """Build a short orientation summary for the recommendation list."""
+    high_impact_review = sum(
+        1 for recommendation in recommendations
+        if recommendation.recommendation_type == "REVIEW" and recommendation.impact_score >= 0.15
+    )
+    trace_upstream = sum(
+        1 for recommendation in recommendations
+        if recommendation.recommendation_type == "TRACE_UPSTREAM"
+    )
+    low_impact = sum(
+        1 for recommendation in recommendations
+        if recommendation.recommendation_type == "DEFER"
+    )
+
+    def _count_phrase(count: int, singular: str, plural: str) -> str:
+        return singular if count == 1 else plural
+
+    lines: list[str] = ["Summary:"]
+    lines.append(
+        f"- {high_impact_review} "
+        f"{_count_phrase(high_impact_review, 'high-impact dependency worth reviewing', 'high-impact dependencies worth reviewing')}"
+    )
+    lines.append(
+        f"- {trace_upstream} "
+        f"{_count_phrase(trace_upstream, 'transitive dependency requires upstream change', 'transitive dependencies require upstream change')}"
+    )
+    lines.append(
+        f"- {low_impact} "
+        f"{_count_phrase(low_impact, 'remaining item is low impact', 'remaining items are low impact')}"
+    )
+    return lines
+
+
+def _recommend_project_name(graph) -> str:
+    """Extract the actual project name from the root package when available."""
+    if graph.root is not None:
+        return graph.root.name
+    return "unknown"
+
+
+def _format_recommendations(recommendations: list, lockfile: Path, package_count: int, project_name: str) -> str:
     """Format package recommendations for terminal output."""
     if not recommendations:
         return "No package recommendations available."
 
     lines: list[str] = []
+    lines.append("Depsly Recommendations")
+    lines.append(f"Project: {project_name}")
+    lines.append(f"Packages analyzed: {package_count}")
+    lines.append(f"Scoring version: {PACKAGE_SCORING_VERSION}")
+    lines.append(f"Recommended focus: {_recommended_focus(recommendations)}")
+    lines.append("")
+    lines.extend(_recommendation_summary(recommendations))
+    lines.append("")
     lines.append("Recommendations:")
 
     for index, recommendation in enumerate(recommendations, 1):
@@ -226,19 +348,26 @@ def _format_recommendations(recommendations: list) -> str:
             actionability = f"{recommendation.actionability} (low impact)"
         lines.append("")
         lines.append(f"{index}. {recommendation.package_key}")
+        if index <= 2 and recommendation.impact_score >= 0.15:
+            lines.append("   Priority: HIGH")
         lines.append(f"   Action: {recommendation.recommendation_type}")
         lines.append(f"   Actionability: {actionability}")
         lines.append(f"   Reason confidence: {recommendation.reason_confidence}")
         lines.append(f"   Impact: {impact_pct}%")
         lines.append(f"   Classification: {_classification_summary(recommendation)}")
         lines.append("   Why:")
-        for reason in recommendation.rationale[:2]:
+        for reason in _display_reasons(recommendation):
             lines.append(f"   - {reason}")
 
+    trace_target = next(
+        (r.package_key for r in recommendations if r.recommendation_type == "TRACE_UPSTREAM"),
+        recommendations[0].package_key,
+    )
+    simulate_target = recommendations[0].package_key
     lines.append("")
     lines.append("Next steps:")
-    lines.append("depsly trace <lockfile> <package>")
-    lines.append("depsly simulate-remove <lockfile> <package>")
+    lines.append(f"depsly trace {lockfile} {trace_target}")
+    lines.append(f"depsly simulate-remove {lockfile} {simulate_target}")
 
     return "\n".join(lines)
 
@@ -316,7 +445,8 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
             }
             click.echo(json_mod.dumps(output, indent=2))
         else:
-            click.echo(_format_report(report))
+            classifications = classify_all_packages(graph, normalized_data=normalized)
+            click.echo(_format_report(report, classifications=classifications, lockfile=lockfile))
     except Exception as e:
         raise click.ClickException(str(e))
 
@@ -340,7 +470,12 @@ def recommend(lockfile: Path, include_dev: bool, limit: int) -> None:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
         recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
-        click.echo(_format_recommendations(recommendations))
+        click.echo(_format_recommendations(
+            recommendations,
+            lockfile,
+            len(graph.nodes),
+            _recommend_project_name(graph),
+        ))
     except Exception as e:
         raise click.ClickException(str(e))
 

@@ -19,12 +19,17 @@ class TestRecommendCli:
         runner = CliRunner()
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "3"])
         assert result.exit_code == 0
-        assert result.output.startswith("Recommendations:")
+        assert result.output.startswith("Depsly Recommendations")
 
     def test_recommend_output_contains_expected_fields(self):
         runner = CliRunner()
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
         assert result.exit_code == 0
+        assert "Project: frontend" in result.output
+        assert "Packages analyzed:" in result.output
+        assert "Scoring version: v1" in result.output
+        assert "Recommended focus:" in result.output
+        assert "Summary:" in result.output
         assert "Action:" in result.output
         assert "Actionability:" in result.output
         assert "Reason confidence:" in result.output
@@ -32,8 +37,8 @@ class TestRecommendCli:
         assert "Classification:" in result.output
         assert "Why:" in result.output
         assert "Next steps:" in result.output
-        assert "depsly trace <lockfile> <package>" in result.output
-        assert "depsly simulate-remove <lockfile> <package>" in result.output
+        assert f"depsly trace {LOCKFILE}" in result.output
+        assert f"depsly simulate-remove {LOCKFILE}" in result.output
 
     def test_recommend_output_is_stably_ordered(self):
         runner = CliRunner()
@@ -76,3 +81,27 @@ class TestRecommendCli:
         assert result.exit_code == 0
         assert "Action: DEFER" in result.output
         assert "Actionability: HIGH (low impact)" in result.output
+
+    def test_recommend_why_includes_concrete_impact_language(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
+        assert result.exit_code == 0
+        assert "Structural impact:" in result.output
+
+    def test_recommend_uses_polished_classification_labels(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
+        assert result.exit_code == 0
+        assert "Classification: Direct (dev dependency)" in result.output
+
+    def test_recommend_marks_top_priority_items(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "2"])
+        assert result.exit_code == 0
+        assert result.output.count("Priority: HIGH") >= 1
+
+    def test_recommend_summary_mentions_upstream_change(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "5"])
+        assert result.exit_code == 0
+        assert "transitive dependency requires upstream change" in result.output
