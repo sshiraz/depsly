@@ -119,6 +119,42 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Added a soft tooling-package feasibility penalty and tightened the `REVIEW` versus `DEFER` split to reduce noisy recommendations.
 - Added focused tests for recommendation ranking, recommendation types, actionability labels, reason-confidence behavior, and tooling-aware feasibility scoring.
 
+### `88a54c8` Add recommend CLI command
+- Added the shipped `depsly recommend <lockfile>` CLI command.
+- Kept CLI logic thin by delegating ranking and recommendation decisions to `core/recommend.py`.
+- Added CLI coverage for deterministic ordering, output fields, limits, and empty-graph behavior.
+
+### `386341d` Add trace CLI command and polish recommendation output
+- Added the shipped `depsly trace <lockfile> <package>` CLI command for deterministic shortest-path tracing.
+- Polished recommendation output with clearer header structure, contextual next steps, and improved `DEFER` wording.
+- Added focused CLI test coverage for trace behavior and recommendation output refinements.
+
+## 2026-04-08
+
+### `4ab17ff` Improve analyze output and polish recommendation presentation
+- Made human-readable `depsly analyze` output classification-aware by labeling blast-radius packages as direct or transitive.
+- Added concrete next-step hints from `analyze` to `recommend` and `trace`, including a real transitive target when available.
+- Surfaced scoring version metadata in recommendation output and upgraded recommendation presentation with project metadata, summary lines, stronger rationale wording, and priority cues.
+- Added focused CLI coverage for the new analyze and recommendation presentation behavior.
+
+### `a9e6464` Make Depsly installable via pipx
+- Added `wheel` to build requirements so setuptools-based wheel builds work reliably in install workflows.
+- Documented `pipx` installation and explicit Python 3.11 usage in the README.
+- Improved local-install ergonomics without changing runtime CLI behavior.
+
+### `1e121ed` Add README metadata for PyPI publishing
+- Declared `README.md` as the package readme in `pyproject.toml`.
+- Prepared the package for a populated PyPI long description and validated build artifacts with `twine check`.
+
+### `7ff43fa` Replace README with product-focused release copy
+- Replaced the minimal README with release-oriented product documentation.
+- Documented the shipped CLI workflow around `analyze`, `recommend`, `trace`, and `simulate-remove`.
+- Clarified the recommendation model, local-first positioning, install paths, and early release status.
+
+### `4bbb734` Refine PyPI package metadata
+- Updated package metadata to describe Depsly as a local-first dependency decision CLI for JS/TS projects.
+- Added author metadata for PyPI publishing.
+
 ## Summary of Implemented Feature Areas
 
 - Backend/API scaffold
@@ -137,3 +173,7 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Standardized simulation results
 - Recommendation engine
 - Recommendation UX labels
+- `recommend` CLI command
+- `trace` CLI command
+- Classification-aware analyze UX
+- `pipx` / PyPI packaging metadata

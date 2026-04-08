@@ -22,14 +22,18 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 
 ## Implemented Product Features
 - [x] Installable CLI with `depsly analyze`
+- [x] Installable CLI with `depsly recommend`
+- [x] Installable CLI with `depsly trace`
 - [x] Human-readable risk reporting and score breakdowns
+- [x] Classification-aware analyze output with next-step guidance
 - [x] Blast radius ranking
 - [x] `depsly simulate-remove` structural what-if analysis
 - [x] JSON output for machine-readable analysis
+- [x] Recommendation output with scoring version, actionability, and reason-confidence labels
+- [x] `pipx`-ready package metadata and published-package README metadata
 
 ## Planned / Not Yet Implemented
-- [ ] `depsly trace` CLI command
-- [ ] `depsly recommend` CLI command
+- [ ] `simulate-replace` design / implementation
 - [ ] History tracking
 - [ ] Safety drift analysis
 - [ ] Monitoring and alerts

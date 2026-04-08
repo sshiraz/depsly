@@ -22,3 +22,9 @@
 - Added shared simulation API and deterministic trace engine
 - Added recommendation engine with package ranking based on impact and feasibility
 - Added discrete actionability and reason-confidence labels for recommendation UX
+
+## 2026-04-08
+- Added shipped `depsly recommend` CLI output with project header, summary, priority cues, contextual next steps, and scoring-version display
+- Added shipped `depsly trace` CLI command for deterministic shortest-path inspection
+- Improved human-readable `depsly analyze` output with direct/transitive blast-radius labeling and guidance to `recommend` and `trace`
+- Updated packaging metadata and README for `pipx`/PyPI release preparation
