@@ -63,6 +63,8 @@ Acceptance criteria:
 - easy to bump later
 - no scoring behavior changes required
 
+Status: DONE
+
 ---
 
 ### Task 12 — Performance pass for recommendations
@@ -85,6 +87,8 @@ Acceptance criteria:
 - no unnecessary repeated full-graph scans where avoidable
 - deterministic outputs preserved
 - existing tests still pass
+
+Status: DONE
 
 ---
 
@@ -112,6 +116,8 @@ Document:
 Acceptance criteria:
 - docs reflect actual shipped behavior
 - no overclaiming of unimplemented features
+
+Status: DONE
 
 ---
 

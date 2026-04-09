@@ -19,6 +19,7 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 - [x] Standardized structural simulation result API
 - [x] Recommendation engine with deterministic ranking
 - [x] Discrete actionability and reason-confidence labels for recommendations
+- [x] Reduced duplicate simulation work in recommendation scoring
 
 ## Implemented Product Features
 - [x] Installable CLI with `depsly analyze`
@@ -31,9 +32,10 @@ For the chronological history with commit IDs, see `docs/implemented_features_by
 - [x] JSON output for machine-readable analysis
 - [x] Recommendation output with scoring version, actionability, and reason-confidence labels
 - [x] `pipx`-ready package metadata and published-package README metadata
+- [x] Internal design note for future `simulate-replace`
 
 ## Planned / Not Yet Implemented
-- [ ] `simulate-replace` design / implementation
+- [ ] `simulate-replace` command / implementation
 - [ ] History tracking
 - [ ] Safety drift analysis
 - [ ] Monitoring and alerts

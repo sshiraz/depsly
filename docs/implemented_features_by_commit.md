@@ -155,6 +155,11 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Updated package metadata to describe Depsly as a local-first dependency decision CLI for JS/TS projects.
 - Added author metadata for PyPI publishing.
 
+### `b48f1a0` Reduce duplicate simulation work in recommendation scoring
+- Updated recommendation generation to reuse each package's existing structural simulation result when computing final scores.
+- Extended package scoring helpers so callers can supply precomputed impact and feasibility values instead of recomputing them.
+- Preserved existing ranking behavior while reducing duplicate simulation work on larger graphs.
+
 ## Summary of Implemented Feature Areas
 
 - Backend/API scaffold
