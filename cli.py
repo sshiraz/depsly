@@ -9,6 +9,7 @@ import click
 
 from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
 from core.classify import classify_all_packages
+from core.export import export_recommendations
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
@@ -464,18 +465,32 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
     type=int,
     help="Max recommendations to show (default: 10).",
 )
-def recommend(lockfile: Path, include_dev: bool, limit: int) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> None:
     """Recommend package actions for a package-lock.json file."""
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        report = analyze_graph(graph)
         recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
-        click.echo(_format_recommendations(
-            recommendations,
-            lockfile,
-            len(graph.nodes),
-            _recommend_project_name(graph),
-        ))
+        project_name = _recommend_project_name(graph)
+        if as_json:
+            output = export_recommendations(
+                lockfile=lockfile,
+                project_name=project_name,
+                report=report,
+                recommendations=recommendations,
+                include_dev=include_dev,
+                limit=limit,
+            )
+            click.echo(json_mod.dumps(output, indent=2))
+        else:
+            click.echo(_format_recommendations(
+                recommendations,
+                lockfile,
+                len(graph.nodes),
+                project_name,
+            ))
     except Exception as e:
         raise click.ClickException(str(e))
 
