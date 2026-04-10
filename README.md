@@ -192,17 +192,37 @@ It is a:
 
 ## 📚 Docs
 
-See DOCUMENTATION_INDEX.md for deeper details.
+Run the CLI help to explore all commands and options:
+
+```bash
+depsly --help
+```
+
+For command-specific help:
+
+```bash
+depsly analyze --help
+depsly recommend --help
+depsly trace --help
+depsly simulate-remove --help
+```
+
+Example:
+
+```bash
+depsly recommend package-lock.json
+```
 
 ---
 
 ## 🚧 Status
 
-Early release (v0.1.0)
+Early release (v0.1.2)
 
 Core features are stable:
 - analyze
 - recommend
+- recommend --json
 - trace
 - simulate-remove
 
@@ -214,6 +234,12 @@ If you try Depsly on your project, I’d love to hear:
 - what felt useful
 - what felt off
 - what you expected but didn’t see
+
+Email: info+depsly@convologix.com
+
+Even a quick note or screenshot is incredibly helpful.
+
+I read every message.
 
 ---
 
