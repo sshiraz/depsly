@@ -217,7 +217,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.2)
+Early release (v0.1.3)
 
 Core features are stable:
 - analyze
@@ -236,6 +236,7 @@ If you try Depsly on your project, I’d love to hear:
 - what you expected but didn’t see
 
 Email: info+depsly@convologix.com
+or open an issue on GitHub: https://github.com/sshiraz/depsly
 
 Even a quick note or screenshot is incredibly helpful.
 
