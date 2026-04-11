@@ -12,6 +12,28 @@ from cli import cli
 
 
 class TestAnalyzeCli:
+    def test_analyze_includes_model_signal_and_impact_signal(self):
+        lockfile = os.path.join(os.path.dirname(__file__), "..", "nextjs-test", "package-lock.json")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", lockfile])
+        assert result.exit_code == 0
+        assert "Top Recommendation" in result.output
+        assert "(ranked by risk model)" in result.output
+        assert "biggest structural impact" in result.output.lower()
+        assert "Proof:" in result.output
+        assert "Before:" in result.output
+        assert "After removing" in result.output
+        assert "Why this matters:" in result.output
+        assert "Recommended action:" in result.output
+
+    def test_analyze_includes_trace_and_disclaimer_in_hero_block(self):
+        lockfile = os.path.join(os.path.dirname(__file__), "..", "nextjs-test", "package-lock.json")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", lockfile])
+        assert result.exit_code == 0
+        assert "Trace:" in result.output
+        assert "Heuristic-based analysis. Validate with tests." in result.output
+
     def test_blast_radius_labels_direct_and_transitive(self, tmp_path):
         lockfile = tmp_path / "package-lock.json"
         lockfile.write_text(json.dumps({

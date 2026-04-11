@@ -217,7 +217,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.3)
+Early release (v0.1.4)
 
 Core features are stable:
 - analyze

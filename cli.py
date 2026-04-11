@@ -78,11 +78,148 @@ def _package_scope_label(classification) -> str:
     return "unknown"
 
 
+def _hero_action(recommendation) -> str:
+    """Translate recommendation type into one clear next action."""
+    if recommendation.recommendation_type == "REMOVE":
+        return f"Remove or replace {recommendation.package_key} if not required."
+    if recommendation.recommendation_type == "TRACE_UPSTREAM":
+        return f"Trace the parent introducing {recommendation.package_key} before acting directly."
+    if recommendation.recommendation_type == "REVIEW":
+        return f"Review {recommendation.package_key} first; remove it if it is not required."
+    return f"Defer changes to {recommendation.package_key} for now."
+
+
+def _impact_pct(recommendation) -> int:
+    return round(recommendation.impact_score * 100)
+
+
+def _hero_why_lines(report: GraphReport, recommendation, removed_count: int, after_report: GraphReport) -> list[str]:
+    """Build 1-2 human explanation lines for the hero insight."""
+    lines: list[str] = []
+    if recommendation.classification.is_direct_dependency and recommendation.classification.is_dev_dependency is True:
+        lines.append("Large dev dependency under direct team control")
+    elif recommendation.classification.is_direct_dependency:
+        lines.append("Direct dependency under direct team control")
+    elif recommendation.classification.is_transitive_dependency:
+        lines.append("Transitive dependency with meaningful upstream impact")
+
+    if after_report.max_depth < report.max_depth:
+        lines.append(
+            f"Deep dependency chains increase fragility; this cuts max depth from {report.max_depth} to {after_report.max_depth}"
+        )
+    elif recommendation.impact_score >= 0.15:
+        lines.append(f"This one change would remove {removed_count} packages from the current reachable graph")
+    elif report.transitive_dependency_count >= 100:
+        lines.append("Indirect dependency exposure is already high, so small removals matter less")
+
+    return lines[:2]
+
+
+def _hero_insight_lines(graph, report: GraphReport, normalized_data: dict) -> list[str]:
+    """Build the top-of-report hero insight from existing recommendation/simulation logic."""
+    recommendations = recommend_packages(
+        graph,
+        normalized_data=normalized_data,
+        limit=max(len(graph.nodes), 1),
+    )
+    if not recommendations:
+        return []
+
+    top_recommendation = recommendations[0]
+    largest_impact = sorted(
+        recommendations,
+        key=lambda recommendation: (-recommendation.impact_score, recommendation.package_key),
+    )[0]
+    top_recommendation_report = analyze_removal_impact(graph, top_recommendation.package_key)
+    simulation_report = analyze_removal_impact(graph, largest_impact.package_key)
+    trace_result = trace_package(graph, largest_impact.package_key, max_paths=1)
+
+    reachable_before = report.direct_dependency_count + report.transitive_dependency_count
+    reachable_after = (
+        simulation_report.after_report.direct_dependency_count
+        + simulation_report.after_report.transitive_dependency_count
+    )
+
+    lines: list[str] = []
+    lines.append("")
+    lines.append("Top Recommendation")
+    lines.append("(ranked by risk model)")
+    lines.append(f"  {top_recommendation.package_key}")
+    lines.append(
+        f"  -> Eliminates {top_recommendation_report.removed_subgraph_node_count} packages ({_impact_pct(top_recommendation)}% of your graph)"
+    )
+    if top_recommendation.package_key == largest_impact.package_key:
+        lines.append("  -> Removing this has the biggest structural impact")
+        if simulation_report.after_report.max_depth < report.max_depth:
+            lines.append(
+                f"  -> Reduces max depth from {report.max_depth} to {simulation_report.after_report.max_depth}"
+            )
+        else:
+            lines.append(
+                f"  -> Reduces root-reachable total from {reachable_before} to {reachable_after}"
+            )
+    else:
+        lines.append("")
+        lines.append("Largest Structural Impact")
+        lines.append(f"  {largest_impact.package_key}")
+        lines.append(
+            f"  -> Removing this has the biggest structural impact"
+        )
+        lines.append(
+            f"  -> Eliminates {simulation_report.removed_subgraph_node_count} packages ({_impact_pct(largest_impact)}% of your graph)"
+        )
+        if simulation_report.after_report.max_depth < report.max_depth:
+            lines.append(
+                f"  -> Reduces max depth from {report.max_depth} to {simulation_report.after_report.max_depth}"
+            )
+        else:
+            lines.append(
+                f"  -> Reduces root-reachable total from {reachable_before} to {reachable_after}"
+            )
+
+    lines.append("")
+    lines.append("Proof:")
+    lines.append("")
+    lines.append("Before:")
+    lines.append(f"  - Root-reachable total: {reachable_before}")
+    lines.append(f"  - Max depth: {report.max_depth}")
+    lines.append("")
+    lines.append(f"After removing {largest_impact.package_key}:")
+    lines.append(f"  - Root-reachable total: {reachable_after}")
+    lines.append(f"  - Max depth: {simulation_report.after_report.max_depth}")
+
+    why_lines = _hero_why_lines(
+        report,
+        largest_impact,
+        simulation_report.removed_subgraph_node_count,
+        simulation_report.after_report,
+    )
+    if why_lines:
+        lines.append("")
+        lines.append("Why this matters:")
+        for line in why_lines:
+            lines.append(f"  - {line}")
+
+    if trace_result.paths:
+        lines.append("")
+        lines.append("Trace:")
+        lines.append(f"  {trace_result.paths[0][0]} -> {' -> '.join(trace_result.paths[0][1:])}")
+
+    lines.append("")
+    lines.append("Recommended action:")
+    lines.append(f"  {_hero_action(top_recommendation)}")
+    lines.append("")
+    lines.append("  Heuristic-based analysis. Validate with tests.")
+    return lines
+
+
 def _format_report(
     report: GraphReport,
     *,
     classifications: dict | None = None,
     lockfile: Path | None = None,
+    graph=None,
+    normalized_data: dict | None = None,
 ) -> str:
     """Format a GraphReport into human-readable output."""
     lines: list[str] = []
@@ -93,6 +230,9 @@ def _format_report(
     label = proj_score.label
     lines.append(f"Project Risk: {_styled_risk(label, score)}")
     lines.append(f"Project: {_project_name(report)}")
+
+    if graph is not None and normalized_data is not None:
+        lines.extend(_hero_insight_lines(graph, report, normalized_data))
 
     # Dependencies
     reachable_total = (
@@ -460,7 +600,15 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
             click.echo(json_mod.dumps(output, indent=2))
         else:
             classifications = classify_all_packages(graph, normalized_data=normalized)
-            click.echo(_format_report(report, classifications=classifications, lockfile=lockfile))
+            click.echo(
+                _format_report(
+                    report,
+                    classifications=classifications,
+                    lockfile=lockfile,
+                    graph=graph,
+                    normalized_data=normalized,
+                )
+            )
     except Exception as e:
         raise click.ClickException(str(e))
 
