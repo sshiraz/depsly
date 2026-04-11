@@ -95,11 +95,18 @@ def _format_report(
     lines.append(f"Project: {_project_name(report)}")
 
     # Dependencies
+    reachable_total = (
+        report.direct_dependency_count + report.transitive_dependency_count
+        if report.root_package_key is not None
+        else 0
+    )
     lines.append("")
     lines.append("Dependencies:")
-    lines.append(f"  - Total: {report.total_nodes}")
-    lines.append(f"  - Direct: {report.direct_dependency_count}")
-    lines.append(f"  - Transitive: {report.transitive_dependency_count}")
+    lines.append(f"  - Graph nodes: {report.total_nodes}")
+    lines.append(f"  - Root-reachable direct: {report.direct_dependency_count}")
+    lines.append(f"  - Root-reachable transitive: {report.transitive_dependency_count}")
+    if reachable_total > 0:
+        lines.append(f"  - Root-reachable total: {reachable_total}")
     lines.append(f"  - Max depth: {report.max_depth}")
 
     # Standout metric: dependency concentration
@@ -150,10 +157,16 @@ def _format_report(
                 break
         if dominant and report.total_edges > 0:
             pct = round(edge_sum / report.total_edges * 100)
-            risks.append(
-                f"High centralization: {len(dominant)} packages control "
-                f"{pct}% of your dependency graph, increasing systemic risk"
-            )
+            if pct >= 50:
+                risks.append(
+                    f"High centralization: {len(dominant)} packages control "
+                    f"{pct}% of your dependency graph, increasing systemic risk"
+                )
+            elif pct >= 30:
+                risks.append(
+                    f"Moderate concentration: {len(dominant)} packages control "
+                    f"{pct}% of your dependency graph"
+                )
     # Transitive exposure
     if report.transitive_dependency_count >= 100:
         risks.append(
@@ -287,9 +300,9 @@ def _recommended_focus(recommendations: list) -> str:
 
 def _recommendation_summary(recommendations: list) -> list[str]:
     """Build a short orientation summary for the recommendation list."""
-    high_impact_review = sum(
+    high_impact_recommendations = sum(
         1 for recommendation in recommendations
-        if recommendation.recommendation_type == "REVIEW" and recommendation.impact_score >= 0.15
+        if recommendation.impact_score >= 0.15
     )
     trace_upstream = sum(
         1 for recommendation in recommendations
@@ -305,8 +318,8 @@ def _recommendation_summary(recommendations: list) -> list[str]:
 
     lines: list[str] = ["Summary:"]
     lines.append(
-        f"- {high_impact_review} "
-        f"{_count_phrase(high_impact_review, 'high-impact dependency worth reviewing', 'high-impact dependencies worth reviewing')}"
+        f"- {high_impact_recommendations} "
+        f"{_count_phrase(high_impact_recommendations, 'high-impact recommendation', 'high-impact recommendations')}"
     )
     lines.append(
         f"- {trace_upstream} "

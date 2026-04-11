@@ -152,18 +152,23 @@ def score_project(report: GraphReport) -> ProjectScore:
 
     # Concentration (0-25)
     concentration_pts = 0
+    concentration_reason = "top dependencies do not dominate the graph"
     if report.total_edges > 0 and report.top_packages_by_fanout:
         top3_edges = sum(c for _, c in report.top_packages_by_fanout[:3])
         concentration = top3_edges / report.total_edges
         if concentration >= 0.5:
             concentration_pts = 25
+            concentration_reason = "top dependencies strongly dominate the graph"
         elif concentration >= 0.4:
             concentration_pts = 20
+            concentration_reason = "top dependencies dominate the graph"
         elif concentration >= 0.3:
             concentration_pts = 15
+            concentration_reason = "top dependencies are concentrated in the graph"
         elif concentration >= 0.15:
             concentration_pts = 8
-    components.append(ScoreComponent("Centralization risk", concentration_pts, "top packages dominate"))
+            concentration_reason = "some dependency concentration is emerging"
+    components.append(ScoreComponent("Centralization risk", concentration_pts, concentration_reason))
 
     # Size (0-15)
     size_pts = 0

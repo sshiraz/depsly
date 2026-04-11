@@ -58,3 +58,21 @@ class TestAnalyzeCli:
         result = runner.invoke(cli, ["analyze", lockfile])
         assert result.exit_code == 0
         assert "transitive packages often need tracing upstream" in result.output
+
+    def test_analyze_clarifies_graph_vs_root_reachable_counts(self):
+        lockfile = os.path.join(os.path.dirname(__file__), "..", "axios-test", "axios-package-lock.json")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", lockfile])
+        assert result.exit_code == 0
+        assert "Graph nodes:" in result.output
+        assert "Root-reachable direct:" in result.output
+        assert "Root-reachable transitive:" in result.output
+        assert "Root-reachable total:" in result.output
+
+    def test_analyze_uses_moderate_concentration_wording_when_not_high(self):
+        lockfile = os.path.join(os.path.dirname(__file__), "..", "axios-test", "axios-package-lock.json")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", lockfile])
+        assert result.exit_code == 0
+        assert "Moderate concentration:" in result.output
+        assert "High centralization:" not in result.output

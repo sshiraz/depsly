@@ -105,3 +105,11 @@ class TestRecommendCli:
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "5"])
         assert result.exit_code == 0
         assert "transitive dependency requires upstream change" in result.output
+
+    def test_recommend_summary_uses_high_impact_recommendations_language(self):
+        lockfile = os.path.join(os.path.dirname(__file__), "..", "axios-test", "axios-package-lock.json")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", lockfile, "--limit", "10"])
+        assert result.exit_code == 0
+        assert "high-impact recommendation" in result.output
+        assert "0 high-impact dependencies worth reviewing" not in result.output
