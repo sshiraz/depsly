@@ -15,6 +15,7 @@ from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
 from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
+from core.storage import save_scan_export
 from core.trace import trace_package
 
 
@@ -526,6 +527,23 @@ def _format_recommendations(recommendations: list, lockfile: Path, package_count
     return "\n".join(lines)
 
 
+def _build_recommendation_export(lockfile: Path, include_dev: bool, limit: int) -> dict:
+    """Build the stable recommendation export used by JSON and persistence flows."""
+    normalized = parse_package_lock(lockfile, include_dev=include_dev)
+    graph = build_graph(normalized)
+    report = analyze_graph(graph)
+    recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
+    project_name = _recommend_project_name(graph)
+    return export_recommendations(
+        lockfile=lockfile,
+        project_name=project_name,
+        report=report,
+        recommendations=recommendations,
+        include_dev=include_dev,
+        limit=limit,
+    )
+
+
 def _format_trace_result(result) -> str:
     """Format root-to-target trace paths for terminal output."""
     if not result.package_found:
@@ -630,28 +648,43 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
 def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> None:
     """Recommend package actions for a package-lock.json file."""
     try:
-        normalized = parse_package_lock(lockfile, include_dev=include_dev)
-        graph = build_graph(normalized)
-        report = analyze_graph(graph)
-        recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
-        project_name = _recommend_project_name(graph)
         if as_json:
-            output = export_recommendations(
-                lockfile=lockfile,
-                project_name=project_name,
-                report=report,
-                recommendations=recommendations,
-                include_dev=include_dev,
-                limit=limit,
-            )
+            output = _build_recommendation_export(lockfile, include_dev, limit)
             click.echo(json_mod.dumps(output, indent=2))
         else:
+            normalized = parse_package_lock(lockfile, include_dev=include_dev)
+            graph = build_graph(normalized)
+            recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
+            project_name = _recommend_project_name(graph)
             click.echo(_format_recommendations(
                 recommendations,
                 lockfile,
                 len(graph.nodes),
                 project_name,
             ))
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command("save-scan")
+@click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--include-dev/--no-dev",
+    default=True,
+    help="Include devDependencies (default: yes).",
+)
+@click.option(
+    "--limit",
+    default=10,
+    type=int,
+    help="Max recommendations to save (default: 10).",
+)
+def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
+    """Persist a normalized recommendation scan locally."""
+    try:
+        output = _build_recommendation_export(lockfile, include_dev, limit)
+        saved_path = save_scan_export(output)
+        click.echo(f"Saved scan: {saved_path}")
     except Exception as e:
         raise click.ClickException(str(e))
 
