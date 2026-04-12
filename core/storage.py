@@ -42,3 +42,66 @@ def save_scan_export(export_data: dict) -> Path:
     output_path = output_dir / scan_filename(project_name, timestamp)
     output_path.write_text(json.dumps(export_data, indent=2) + "\n", encoding="utf-8")
     return output_path
+
+
+def list_saved_scans(project_name: str | None = None) -> list[Path]:
+    """List saved scan files in deterministic timestamp order."""
+    output_dir = scans_dir()
+    if not output_dir.exists():
+        return []
+
+    if project_name:
+        pattern = f"{project_slug(project_name)}-*.json"
+        paths = list(output_dir.glob(pattern))
+    else:
+        paths = list(output_dir.glob("*.json"))
+
+    return sorted(paths)
+
+
+def load_scan_export(path: Path) -> dict:
+    """Load a saved scan export from disk."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def compare_scan_exports(before: dict, after: dict) -> dict:
+    """Compute a small deterministic diff between two saved scan exports."""
+    before_project = before["project"]
+    after_project = after["project"]
+    before_recommendations = before["recommendations"]
+    after_recommendations = after["recommendations"]
+
+    before_top = before_recommendations[0]["package_key"] if before_recommendations else None
+    after_top = after_recommendations[0]["package_key"] if after_recommendations else None
+
+    return {
+        "project": {
+            "before": before_project["name"],
+            "after": after_project["name"],
+        },
+        "scan": {
+            "before_timestamp": before["scan"]["timestamp"],
+            "after_timestamp": after["scan"]["timestamp"],
+        },
+        "dependencies": {
+            "before_total": before_project["total_dependencies"],
+            "after_total": after_project["total_dependencies"],
+            "delta_total": after_project["total_dependencies"] - before_project["total_dependencies"],
+            "before_direct": before_project["direct_dependencies"],
+            "after_direct": after_project["direct_dependencies"],
+            "delta_direct": after_project["direct_dependencies"] - before_project["direct_dependencies"],
+            "before_transitive": before_project["transitive_dependencies"],
+            "after_transitive": after_project["transitive_dependencies"],
+            "delta_transitive": (
+                after_project["transitive_dependencies"] - before_project["transitive_dependencies"]
+            ),
+            "before_max_depth": before_project["max_depth"],
+            "after_max_depth": after_project["max_depth"],
+            "delta_max_depth": after_project["max_depth"] - before_project["max_depth"],
+        },
+        "recommendations": {
+            "before_top": before_top,
+            "after_top": after_top,
+            "changed": before_top != after_top,
+        },
+    }

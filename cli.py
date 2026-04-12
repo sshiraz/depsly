@@ -16,6 +16,7 @@ from core.recommend import recommend_packages
 from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
 from core.storage import save_scan_export
+from core.storage import compare_scan_exports, list_saved_scans, load_scan_export
 from core.trace import trace_package
 
 
@@ -685,6 +686,74 @@ def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
         output = _build_recommendation_export(lockfile, include_dev, limit)
         saved_path = save_scan_export(output)
         click.echo(f"Saved scan: {saved_path}")
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command("list-scans")
+@click.option("--project", "project_name", help="Filter saved scans by project name.")
+def list_scans(project_name: str | None) -> None:
+    """List saved local scan files."""
+    try:
+        scan_paths = list_saved_scans(project_name)
+        if not scan_paths:
+            click.echo("No saved scans found.")
+            return
+
+        for path in scan_paths:
+            scan = load_scan_export(path)
+            click.echo(
+                f"{path} | {scan['project']['name']} | {scan['scan']['timestamp']}"
+            )
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command("compare-scans")
+@click.argument("before_scan", type=click.Path(exists=True, path_type=Path))
+@click.argument("after_scan", type=click.Path(exists=True, path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
+    """Compare two saved normalized scan files."""
+    try:
+        comparison = compare_scan_exports(load_scan_export(before_scan), load_scan_export(after_scan))
+        if as_json:
+            click.echo(json_mod.dumps(comparison, indent=2))
+            return
+
+        lines: list[str] = []
+        lines.append("Scan Comparison")
+        lines.append(f"Project: {comparison['project']['before']} -> {comparison['project']['after']}")
+        lines.append(
+            f"Scans: {comparison['scan']['before_timestamp']} -> {comparison['scan']['after_timestamp']}"
+        )
+        lines.append("")
+        lines.append("Dependency changes:")
+        lines.append(
+            f"  - Total: {comparison['dependencies']['before_total']} -> {comparison['dependencies']['after_total']} "
+            f"({comparison['dependencies']['delta_total']:+d})"
+        )
+        lines.append(
+            f"  - Direct: {comparison['dependencies']['before_direct']} -> {comparison['dependencies']['after_direct']} "
+            f"({comparison['dependencies']['delta_direct']:+d})"
+        )
+        lines.append(
+            "  - Transitive: "
+            f"{comparison['dependencies']['before_transitive']} -> {comparison['dependencies']['after_transitive']} "
+            f"({comparison['dependencies']['delta_transitive']:+d})"
+        )
+        lines.append(
+            f"  - Max depth: {comparison['dependencies']['before_max_depth']} -> {comparison['dependencies']['after_max_depth']} "
+            f"({comparison['dependencies']['delta_max_depth']:+d})"
+        )
+        lines.append("")
+        lines.append("Top recommendation:")
+        lines.append(f"  - Before: {comparison['recommendations']['before_top'] or 'none'}")
+        lines.append(f"  - After: {comparison['recommendations']['after_top'] or 'none'}")
+        lines.append(
+            f"  - Changed: {'yes' if comparison['recommendations']['changed'] else 'no'}"
+        )
+        click.echo("\n".join(lines))
     except Exception as e:
         raise click.ClickException(str(e))
 
