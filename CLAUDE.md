@@ -131,7 +131,7 @@ You MUST:
 2. Check:
    - existing files
    - existing logic
-   - prior decisions (DECISIONS.md)
+   - prior documented decisions
 
 3. Answer:
    - Where does this belong?
@@ -164,7 +164,7 @@ You MUST:
 - list follow-ups or risks
 - update docs if needed:
   - DEV_LOG.md
-  - DECISIONS.md
+  - update the relevant docs if a public-facing decision changes documentation
   - MASTER_FEATURE_LIST.md
 
 ---
@@ -226,7 +226,7 @@ over:
 - architecture changes → update ARCHITECTURE.md
 - feature added → update MASTER_FEATURE_LIST.md
 - meaningful work done → update DEV_LOG.md
-- important decision made → update DECISIONS.md
+- important decision made → update the relevant public docs if needed
 
 ---
 
