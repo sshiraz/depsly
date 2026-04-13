@@ -13,6 +13,7 @@ from core.export import export_recommendations
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
+from core.scan import build_recommendation_scan
 from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
 from core.storage import save_scan_export
@@ -530,19 +531,7 @@ def _format_recommendations(recommendations: list, lockfile: Path, package_count
 
 def _build_recommendation_export(lockfile: Path, include_dev: bool, limit: int) -> dict:
     """Build the stable recommendation export used by JSON and persistence flows."""
-    normalized = parse_package_lock(lockfile, include_dev=include_dev)
-    graph = build_graph(normalized)
-    report = analyze_graph(graph)
-    recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
-    project_name = _recommend_project_name(graph)
-    return export_recommendations(
-        lockfile=lockfile,
-        project_name=project_name,
-        report=report,
-        recommendations=recommendations,
-        include_dev=include_dev,
-        limit=limit,
-    )
+    return build_recommendation_scan(lockfile, include_dev=include_dev, limit=limit)
 
 
 def _format_trace_result(result) -> str:
