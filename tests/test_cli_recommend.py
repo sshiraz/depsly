@@ -87,6 +87,36 @@ class TestRecommendCli:
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
         assert result.exit_code == 0
         assert "Structural impact:" in result.output
+        assert "Verify whether this dependency is still required" in result.output or "still required before removing it" in result.output
+
+    def test_non_dev_direct_dependency_is_not_presented_as_remove(self, tmp_path):
+        lockfile = tmp_path / "package-lock.json"
+        lockfile.write_text(json.dumps({
+            "name": "app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "app",
+                    "version": "1.0.0",
+                    "dependencies": {"react": "^18.2.0"},
+                },
+                "node_modules/react": {
+                    "version": "18.2.0",
+                    "dependencies": {
+                        "scheduler": "^0.23.0",
+                        "loose-envify": "^1.4.0",
+                    },
+                },
+                "node_modules/scheduler": {"version": "0.23.0"},
+                "node_modules/loose-envify": {"version": "1.4.0"},
+            },
+        }))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["recommend", str(lockfile), "--limit", "1"])
+        assert result.exit_code == 0
+        assert "Action: REMOVE" not in result.output
 
     def test_recommend_uses_polished_classification_labels(self):
         runner = CliRunner()

@@ -416,17 +416,23 @@ def _display_reasons(recommendation) -> list[str]:
         if "packages)" in reason:
             removed_count_hint = reason.split("(")[-1].rstrip(")")
             break
+    impact_line = f"Structural impact: {impact_pct}%"
     if removed_count_hint:
-        reasons.append(f"Structural impact: {impact_pct}% ({removed_count_hint})")
-    else:
-        reasons.append(f"Structural impact: {impact_pct}%")
+        impact_line = f"{impact_line} ({removed_count_hint})"
 
+    if recommendation.recommendation_type == "REMOVE":
+        reasons.append(f"{impact_line}. Review whether this dependency is still required before removing it")
+        return reasons[:2]
+    if recommendation.recommendation_type == "REVIEW":
+        reasons.append(f"{impact_line}. Verify whether this dependency is still required")
+        return reasons[:2]
+    reasons.append(impact_line)
     if recommendation.recommendation_type == "DEFER":
         reasons.append("Easy to change, but low payoff right now")
     elif recommendation.recommendation_type == "TRACE_UPSTREAM":
         reasons.append("Trace upstream before treating as directly removable")
     elif recommendation.reason_confidence == "HIGH":
-        reasons.append("Strong structural signal")
+        reasons.append("Strong structural signal, but usage still needs verification")
 
     return reasons[:2]
 

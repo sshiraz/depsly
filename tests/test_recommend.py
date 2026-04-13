@@ -111,9 +111,48 @@ class TestRecommendPackages:
         graph = build_graph(normalized)
         recommendations = recommend_packages(graph, normalized_data=normalized)
         by_key = {r.package_key: r for r in recommendations}
-        assert by_key["react@18.2.0"].recommendation_type == "REMOVE"
+        assert by_key["react@18.2.0"].recommendation_type == "REVIEW"
         assert by_key["eslint@9.39.4"].recommendation_type == "REVIEW"
         assert by_key["typescript@5.3.3"].recommendation_type == "REVIEW"
+
+    def test_remove_is_reserved_for_high_confidence_dev_direct_dependencies(self):
+        graph = build_graph(
+            {
+                "root": "app@1.0.0",
+                "packages": {
+                    "app@1.0.0": {
+                        "name": "app",
+                        "version": "1.0.0",
+                        "dependencies": ["unused-helper@1.0.0"],
+                    },
+                    "unused-helper@1.0.0": {
+                        "name": "unused-helper",
+                        "version": "1.0.0",
+                        "dependencies": ["leaf-a@1.0.0", "leaf-b@1.0.0"],
+                    },
+                    "leaf-a@1.0.0": {"name": "leaf-a", "version": "1.0.0", "dependencies": []},
+                    "leaf-b@1.0.0": {"name": "leaf-b", "version": "1.0.0", "dependencies": []},
+                },
+            }
+        )
+        normalized = {
+            "root": "app@1.0.0",
+            "root_dev_dependency_keys": ("unused-helper@1.0.0",),
+            "packages": {
+                "app@1.0.0": {"name": "app", "version": "1.0.0", "dependencies": ["unused-helper@1.0.0"]},
+                "unused-helper@1.0.0": {
+                    "name": "unused-helper",
+                    "version": "1.0.0",
+                    "dependencies": ["leaf-a@1.0.0", "leaf-b@1.0.0"],
+                },
+                "leaf-a@1.0.0": {"name": "leaf-a", "version": "1.0.0", "dependencies": []},
+                "leaf-b@1.0.0": {"name": "leaf-b", "version": "1.0.0", "dependencies": []},
+            },
+        }
+
+        recommendations = recommend_packages(graph, normalized_data=normalized)
+        by_key = {r.package_key: r for r in recommendations}
+        assert by_key["unused-helper@1.0.0"].recommendation_type == "REMOVE"
 
     def test_actionability_is_discretized(self):
         normalized = parse_package_lock(DEV_LOCKFILE)

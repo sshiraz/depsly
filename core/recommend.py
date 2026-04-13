@@ -41,6 +41,7 @@ def recommend_packages(
         recommendation_type = _recommendation_type(
             package_key,
             classification.is_direct_dependency,
+            classification.is_dev_dependency,
             impact_score,
             feasibility_score,
         )
@@ -75,11 +76,18 @@ def recommend_packages(
 def _recommendation_type(
     package_key: str,
     is_direct: bool,
+    is_dev: bool | None,
     impact_score: float,
     feasibility_score: float,
 ) -> str:
     """Classify the recommended action type."""
-    if is_direct and impact_score >= 0.15 and feasibility_score >= 0.6 and not looks_like_tooling_package(package_key):
+    if (
+        is_direct
+        and is_dev is True
+        and impact_score >= 0.15
+        and feasibility_score >= 0.7
+        and not looks_like_tooling_package(package_key)
+    ):
         return "REMOVE"
     if not is_direct and impact_score >= 0.15 and feasibility_score < 0.6:
         return "TRACE_UPSTREAM"
@@ -131,6 +139,8 @@ def _rationale(
 
     if is_dev is True:
         reasons.append("Development-only package")
+    elif is_direct:
+        reasons.append("Application dependency")
 
     if impact_score >= 0.3:
         reasons.append(f"High structural impact ({removed_count} packages)")
