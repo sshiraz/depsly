@@ -26,6 +26,7 @@ It combines:
 - dependency graph analysis  
 - structural impact simulation  
 - feasibility-aware recommendations  
+- saved scan history and comparison  
 
 So you can decide **where to spend your time**.
 
@@ -38,6 +39,8 @@ So you can decide **where to spend your time**.
 - Ranks dependencies by **impact × actionability**
 - Explains why transitive dependencies exist
 - Simulates structural impact of removing packages
+- Exports normalized recommendation scans as JSON
+- Saves scans locally for history and comparison
 - Runs entirely **locally** (no code upload required)
 
 ---
@@ -82,6 +85,12 @@ depsly analyze package-lock.json
 depsly recommend package-lock.json
 ```
 
+JSON export:
+
+```bash
+depsly recommend package-lock.json --json
+```
+
 ---
 
 ### Trace why a package exists
@@ -96,6 +105,16 @@ depsly trace package-lock.json @babel/core@7.29.0
 
 ```bash
 depsly simulate-remove package-lock.json eslint@9.39.4
+```
+
+---
+
+### Save and compare scans over time
+
+```bash
+depsly save-scan package-lock.json
+depsly list-scans --project frontend
+depsly compare-scans ~/.depsly/scans/frontend-2026-04-11T10-15-43Z.json ~/.depsly/scans/frontend-2026-04-12T09-20-00Z.json
 ```
 
 ---
@@ -160,6 +179,8 @@ How strong the structural signal is:
 
 ```text
 analyze → recommend → trace → simulate-remove
+                 ↓
+              save-scan → list-scans → compare-scans
 ```
 
 ---
@@ -205,6 +226,9 @@ depsly analyze --help
 depsly recommend --help
 depsly trace --help
 depsly simulate-remove --help
+depsly save-scan --help
+depsly list-scans --help
+depsly compare-scans --help
 ```
 
 Example:
@@ -217,7 +241,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.5)
+Early release (v0.1.6)
 
 Core features are stable:
 - analyze
@@ -225,6 +249,10 @@ Core features are stable:
 - recommend --json
 - trace
 - simulate-remove
+- save-scan
+- list-scans
+- compare-scans
+- scripts/scan_repos.py batch workflow
 
 ---
 
