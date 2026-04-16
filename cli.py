@@ -14,6 +14,7 @@ from core.export import export_recommendations
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
+from core.resolve import resolve_package_key
 from core.scan import build_recommendation_scan
 from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
@@ -831,8 +832,15 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
-        simulation = simulate_remove_result(graph, package_key)
-        result = analyze_removal_impact(graph, package_key)
+        resolved_package_key = resolve_package_key(graph, package_key, normalized_data=normalized)
+
+        if resolved_package_key is None:
+            raise click.ClickException(
+                f"Package '{package_key}' not found in the dependency graph."
+            )
+
+        simulation = simulate_remove_result(graph, resolved_package_key)
+        result = analyze_removal_impact(graph, resolved_package_key)
 
         if not simulation.package_found:
             raise click.ClickException(
@@ -843,7 +851,9 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
         after = result.after_report
 
         lines: list[str] = []
-        lines.append(f"Simulating removal: {package_key}")
+        lines.append(f"Simulating removal: {resolved_package_key}")
+        if resolved_package_key != package_key:
+            lines.append(f"Resolved '{package_key}' to '{resolved_package_key}'")
         lines.append("")
         lines.append("Before:")
         lines.append(f"  - Total dependencies: {before.total_nodes}")
@@ -863,7 +873,7 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
 
         if pct >= 40:
             lines.append(
-                f"  - High impact: removing {package_key} removes "
+                f"  - High impact: removing {resolved_package_key} removes "
                 f"{pct}% of the dependency graph"
             )
 
