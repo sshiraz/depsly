@@ -122,7 +122,7 @@ class TestRecommendCli:
         runner = CliRunner()
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
         assert result.exit_code == 0
-        assert "Classification: Direct (dev dependency)" in result.output
+        assert "Classification: Direct (root dev dependency)" in result.output
 
     def test_recommend_marks_top_priority_items(self):
         runner = CliRunner()

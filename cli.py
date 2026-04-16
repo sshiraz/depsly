@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as json_mod
+import webbrowser
 from pathlib import Path
 
 import click
@@ -19,6 +20,7 @@ from core.simulate import simulate_remove as simulate_remove_result
 from core.storage import save_scan_export
 from core.storage import compare_scan_exports, list_saved_scans, load_scan_export
 from core.trace import trace_package
+from core.visualize import write_graph_html
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
@@ -391,7 +393,7 @@ def _format_report(
 def _classification_summary(recommendation) -> str:
     """Build a short classification summary for a recommendation."""
     if recommendation.classification.is_direct_dependency and recommendation.classification.is_dev_dependency is True:
-        return "Direct (dev dependency)"
+        return "Direct (root dev dependency)"
     if recommendation.classification.is_direct_dependency:
         return "Direct"
     if recommendation.classification.is_transitive_dependency:
@@ -404,7 +406,7 @@ def _display_reasons(recommendation) -> list[str]:
     reasons: list[str] = []
 
     if recommendation.classification.is_direct_dependency and recommendation.classification.is_dev_dependency is True:
-        reasons.append("Direct dev dependency (user-controlled)")
+        reasons.append("Direct dependency from root devDependencies")
     elif recommendation.classification.is_direct_dependency:
         reasons.append("Direct dependency (user-controlled)")
     elif recommendation.classification.is_transitive_dependency:
@@ -749,6 +751,44 @@ def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
             f"  - Changed: {'yes' if comparison['recommendations']['changed'] else 'no'}"
         )
         click.echo("\n".join(lines))
+    except Exception as e:
+        raise click.ClickException(str(e))
+
+
+@cli.command("graph-html")
+@click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--include-dev/--no-dev",
+    default=True,
+    help="Include devDependencies (default: yes).",
+)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(path_type=Path),
+    help="Output HTML path (default: <lockfile-dir>/depsly-graph.html).",
+)
+@click.option(
+    "--open/--no-open",
+    "open_browser",
+    default=False,
+    help="Open the generated HTML in your default browser.",
+)
+def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open_browser: bool) -> None:
+    """Generate an interactive HTML dependency graph explorer."""
+    try:
+        normalized = parse_package_lock(lockfile, include_dev=include_dev)
+        graph = build_graph(normalized)
+        destination = output_path or lockfile.parent / "depsly-graph.html"
+        written_path = write_graph_html(
+            graph,
+            lockfile=lockfile,
+            normalized_data=normalized,
+            output_path=destination,
+        )
+        click.echo(f"Graph HTML written to: {written_path}")
+        if open_browser:
+            webbrowser.open(written_path.resolve().as_uri())
     except Exception as e:
         raise click.ClickException(str(e))
 

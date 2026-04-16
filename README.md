@@ -41,6 +41,7 @@ So you can decide **where to spend your time**.
 - Simulates structural impact of removing packages
 - Exports normalized recommendation scans as JSON
 - Saves scans locally for history and comparison
+- Generates an interactive HTML dependency graph explorer
 - Runs entirely **locally** (no code upload required)
 
 ---
@@ -119,6 +120,14 @@ depsly compare-scans ~/.depsly/scans/frontend-2026-04-11T10-15-43Z.json ~/.depsl
 
 ---
 
+### Open the dependency graph in your browser
+
+```bash
+depsly graph-html package-lock.json
+```
+
+---
+
 ## 🧪 Example Output
 
 ```text
@@ -131,11 +140,11 @@ Packages analyzed: 204
    Actionability: MEDIUM
    Reason confidence: HIGH
    Impact: 35%
-   Classification: Direct (dev dependency)
+   Classification: Direct (root dev dependency)
 
    Why:
-     - Direct dev dependency (user-controlled)
-     - Structural impact: 35% (71 packages)
+     - Direct dependency from root devDependencies
+     - Structural impact: 35% (71 packages). Verify whether this dependency is still required
 ```
 
 ---
@@ -181,6 +190,8 @@ How strong the structural signal is:
 analyze → recommend → trace → simulate-remove
                  ↓
               save-scan → list-scans → compare-scans
+                 ↓
+              graph-html
 ```
 
 ---
@@ -229,6 +240,7 @@ depsly simulate-remove --help
 depsly save-scan --help
 depsly list-scans --help
 depsly compare-scans --help
+depsly graph-html --help
 ```
 
 Example:
@@ -241,7 +253,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.6)
+Early release (v0.1.7)
 
 Core features are stable:
 - analyze
@@ -252,6 +264,7 @@ Core features are stable:
 - save-scan
 - list-scans
 - compare-scans
+- graph-html
 - scripts/scan_repos.py batch workflow
 
 ---
