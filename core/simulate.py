@@ -11,14 +11,19 @@ STRUCTURAL_SIMULATION_DISCLAIMER = (
 )
 
 
-def simulate_remove(graph: DependencyGraph, package_key: str) -> RemoveSimulationResult:
+def simulate_remove(
+    graph: DependencyGraph,
+    package_key: str,
+    *,
+    before_keys: set[str] | None = None,
+) -> RemoveSimulationResult:
     """Simulate removing a package and return a reusable deterministic result."""
     package_found = package_key in graph.nodes
     simulated_graph = simulate_remove_package(graph, package_key)
 
-    before_keys = set(traverse_bfs(graph))
+    baseline_keys = before_keys if before_keys is not None else set(traverse_bfs(graph))
     after_keys = set(traverse_bfs(simulated_graph))
-    removed_keys = tuple(sorted(before_keys - after_keys))
+    removed_keys = tuple(sorted(baseline_keys - after_keys))
     removed_count = len(removed_keys)
 
     total_nodes_before = len(graph.nodes)

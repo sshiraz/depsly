@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.classify import classify_all_packages
-from core.graph import DependencyGraph
+from core.graph import DependencyGraph, traverse_bfs
 from core.models import Recommendation
 from core.scoring import compute_feasibility_score, compute_package_score, looks_like_tooling_package
 from core.simulate import simulate_remove
@@ -21,6 +21,7 @@ def recommend_packages(
         return []
 
     classifications = classify_all_packages(graph, normalized_data=normalized_data)
+    before_keys = set(traverse_bfs(graph))
     recommendations: list[Recommendation] = []
 
     for package_key in sorted(graph.nodes):
@@ -28,7 +29,7 @@ def recommend_packages(
         if classification.is_root or classification.depth_from_root is None:
             continue
 
-        simulation = simulate_remove(graph, package_key)
+        simulation = simulate_remove(graph, package_key, before_keys=before_keys)
         impact_score = simulation.percent_removed
         feasibility_score = compute_feasibility_score(graph, package_key, classification)
         final_score = compute_package_score(

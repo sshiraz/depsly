@@ -178,9 +178,9 @@ class TestRecommendPackages:
         graph = build_graph(recommendation_graph_data())
         calls: list[str] = []
 
-        def counting_simulate(graph_obj, package_key):
+        def counting_simulate(graph_obj, package_key, **kwargs):
             calls.append(package_key)
-            return simulate_remove_result(graph_obj, package_key)
+            return simulate_remove_result(graph_obj, package_key, **kwargs)
 
         monkeypatch.setattr(recommend_module, "simulate_remove", counting_simulate)
 

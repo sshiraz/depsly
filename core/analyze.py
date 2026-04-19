@@ -172,23 +172,26 @@ class RemovalSimulationReport:
 def analyze_removal_impact(
     graph: DependencyGraph,
     package_key: str,
+    *,
+    before_report: GraphReport | None = None,
+    simulation=None,
 ) -> RemovalSimulationReport:
     """Simulate removing a package and compare before/after metrics.
 
     Computes full GraphReport for both the original and simulated graph,
     then derives impact metrics from the difference.
     """
-    before = analyze_graph(graph)
-    simulation = simulate_remove(graph, package_key)
-    after = analyze_graph(simulation.simulated_graph)
+    before = before_report if before_report is not None else analyze_graph(graph)
+    simulation_result = simulation if simulation is not None else simulate_remove(graph, package_key)
+    after = analyze_graph(simulation_result.simulated_graph)
 
     return RemovalSimulationReport(
         package_key=package_key,
-        package_found=simulation.package_found,
-        affected_node_count=simulation.removed_count,
-        removed_subgraph_node_count=simulation.removed_count,
+        package_found=simulation_result.package_found,
+        affected_node_count=simulation_result.removed_count,
+        removed_subgraph_node_count=simulation_result.removed_count,
         before_report=before,
         after_report=after,
         risk_delta=None,
-        top_impacted_packages=list(simulation.impacted_packages),
+        top_impacted_packages=list(simulation_result.impacted_packages),
     )

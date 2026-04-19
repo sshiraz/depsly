@@ -103,3 +103,31 @@ class TestGraphHtmlCli:
         assert result.exit_code == 0
         assert len(opened) == 1
         assert opened[0].startswith("file://")
+
+    def test_graph_html_escapes_script_breakout_sequences(self, tmp_path):
+        malicious_name = 'evil</script><script>alert("xss")</script>'
+        lockfile = tmp_path / "package-lock.json"
+        lockfile.write_text(json.dumps({
+            "name": "app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "app",
+                    "version": "1.0.0",
+                    "dependencies": {malicious_name: "^1.0.0"},
+                },
+                "node_modules/evil": {
+                    "name": malicious_name,
+                    "version": "1.0.0",
+                },
+            },
+        }))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["graph-html", str(lockfile)])
+
+        assert result.exit_code == 0
+        html = (tmp_path / "depsly-graph.html").read_text(encoding="utf-8")
+        assert '</script><script>alert("xss")</script>' not in html
+        assert '<\\/script><script>alert(\\"xss\\")<\\/script>' in html

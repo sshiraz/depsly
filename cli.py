@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from core.analyze import analyze_graph, analyze_removal_impact, GraphReport
+from core.analyze import analyze_graph, analyze_removal_impact, GraphReport, RemovalSimulationReport
 from core.classify import classify_all_packages
 from core.export import export_recommendations
 from core.graph import build_graph
@@ -136,8 +136,19 @@ def _hero_insight_lines(graph, report: GraphReport, normalized_data: dict) -> li
         recommendations,
         key=lambda recommendation: (-recommendation.impact_score, recommendation.package_key),
     )[0]
-    top_recommendation_report = analyze_removal_impact(graph, top_recommendation.package_key)
-    simulation_report = analyze_removal_impact(graph, largest_impact.package_key)
+    removal_reports: dict[str, RemovalSimulationReport] = {}
+
+    def removal_report_for(package_key: str):
+        if package_key not in removal_reports:
+            removal_reports[package_key] = analyze_removal_impact(
+                graph,
+                package_key,
+                before_report=report,
+            )
+        return removal_reports[package_key]
+
+    top_recommendation_report = removal_report_for(top_recommendation.package_key)
+    simulation_report = removal_report_for(largest_impact.package_key)
     trace_result = trace_package(graph, largest_impact.package_key, max_paths=1)
 
     reachable_before = report.direct_dependency_count + report.transitive_dependency_count

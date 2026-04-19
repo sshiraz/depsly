@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.classify import classify_all_packages
-from core.graph import DependencyGraph
+from core.graph import DependencyGraph, traverse_bfs
 from core.simulate import simulate_remove
 
 
@@ -28,10 +28,15 @@ def resolve_package_key(graph: DependencyGraph, package_ref: str, normalized_dat
         return matches[0]
 
     classifications = classify_all_packages(graph, normalized_data=normalized_data)
+    impact_cache: dict[str, float] = {}
+    before_keys = set(traverse_bfs(graph))
 
     def sort_key(package_key: str) -> tuple[int, float, str]:
         classification = classifications[package_key]
-        impact = simulate_remove(graph, package_key).percent_removed
+        impact = impact_cache.setdefault(
+            package_key,
+            simulate_remove(graph, package_key, before_keys=before_keys).percent_removed,
+        )
         return (
             0 if classification.is_direct_dependency else 1,
             -impact,

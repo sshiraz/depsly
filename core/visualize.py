@@ -96,7 +96,12 @@ def build_graph_view_model(graph: DependencyGraph, normalized_data: dict | None 
 def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     """Render a self-contained HTML graph explorer."""
     project_name = escape(view_model["project"]["name"])
-    data_json = json.dumps(view_model, separators=(",", ":"))
+    data_json = (
+        json.dumps(view_model, separators=(",", ":"))
+        .replace("</", "<\\/")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
     lockfile_label = escape(str(source_lockfile))
     title = f"Depsly Graph • {project_name}"
     return f"""<!DOCTYPE html>
@@ -702,6 +707,15 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       return el;
     }}
 
+    function escapeHtml(value) {{
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }}
+
     summary.append(
       metricCard("Nodes", GRAPH_DATA.summary.nodes),
       metricCard("Reachable", GRAPH_DATA.summary.reachable),
@@ -720,6 +734,7 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     let boxZoomStart = null;
     const collapsedKeys = new Set();
     const expandedKeys = new Set();
+    let treeMatchCache = new Map();
 
     function applyTransform() {{
       viewport.setAttribute("transform", `translate(${{transform.x}}, ${{transform.y}}) scale(${{transform.scale}})`);
@@ -842,7 +857,7 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         <div class="path-strip">
           ${{path.map((item, index) => `
             ${{index ? '<span class="path-arrow">→</span>' : ""}}
-            <span class="path-chip">${{item}}</span>
+            <span class="path-chip">${{escapeHtml(item)}}</span>
           `).join("")}}
         </div>
       `;
@@ -850,7 +865,7 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
 
     function scopeBadge(node) {{
       const scopeText = node.scope === "direct" && node.is_dev_dependency ? "direct dev" : node.scope;
-      return `<span class="badge ${{node.tone}}">${{scopeText}}</span>`;
+      return `<span class="badge ${{node.tone}}">${{escapeHtml(scopeText)}}</span>`;
     }}
 
     function renderSidebar(node) {{
@@ -862,25 +877,25 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       const depList = (outgoing.get(node.key) || []).sort();
       const path = pathToNode(node.key);
       selectionCard.innerHTML = `
-        <div class="pill" style="margin-bottom: 10px;">${{node.scope}} • ${{node.tone}}</div>
-        <h2 style="margin: 0 0 4px;">${{node.name}}</h2>
-        <div class="muted" style="margin-bottom: 12px;">${{node.key}}</div>
+        <div class="pill" style="margin-bottom: 10px;">${{escapeHtml(node.scope)}} • ${{escapeHtml(node.tone)}}</div>
+        <h2 style="margin: 0 0 4px;">${{escapeHtml(node.name)}}</h2>
+        <div class="muted" style="margin-bottom: 12px;">${{escapeHtml(node.key)}}</div>
         <div class="meta-grid">
-          <div><strong>Version</strong>${{node.version}}</div>
-          <div><strong>Depth</strong>${{node.depth ?? "unknown"}}</div>
-          <div><strong>Parents</strong>${{node.parent_count}}</div>
-          <div><strong>Dependencies</strong>${{node.dependency_count}}</div>
-          <div><strong>Dependents</strong>${{node.dependent_count}}</div>
-          <div><strong>Root dev dependency</strong>${{node.scope === "root" ? "n/a" : node.is_dev_dependency === true ? "yes" : node.is_dev_dependency === false ? "no" : "unknown"}}</div>
+          <div><strong>Version</strong>${{escapeHtml(node.version)}}</div>
+          <div><strong>Depth</strong>${{escapeHtml(node.depth ?? "unknown")}}</div>
+          <div><strong>Parents</strong>${{escapeHtml(node.parent_count)}}</div>
+          <div><strong>Dependencies</strong>${{escapeHtml(node.dependency_count)}}</div>
+          <div><strong>Dependents</strong>${{escapeHtml(node.dependent_count)}}</div>
+          <div><strong>Root dev dependency</strong>${{escapeHtml(node.scope === "root" ? "n/a" : node.is_dev_dependency === true ? "yes" : node.is_dev_dependency === false ? "no" : "unknown")}}</div>
         </div>
         <div style="height: 12px;"></div>
         <strong class="muted">Path from root</strong>
         ${{renderPath(path)}}
         <div style="height: 12px;"></div>
         <strong class="muted">Depends on</strong>
-        <ul class="list">${{depList.length ? depList.map(item => `<li>${{item}}</li>`).join("") : "<li>None</li>"}}</ul>
+        <ul class="list">${{depList.length ? depList.map(item => `<li>${{escapeHtml(item)}}</li>`).join("") : "<li>None</li>"}}</ul>
         <strong class="muted">Introduced by</strong>
-        <ul class="list">${{parentList.length ? parentList.map(item => `<li>${{item}}</li>`).join("") : "<li>Root only</li>"}}</ul>
+        <ul class="list">${{parentList.length ? parentList.map(item => `<li>${{escapeHtml(item)}}</li>`).join("") : "<li>Root only</li>"}}</ul>
       `;
     }}
 
@@ -955,12 +970,18 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     }}
 
     function treeNodeMatches(key, seen = new Set()) {{
+      if (treeMatchCache.has(key) && seen.size === 0) {{
+        return treeMatchCache.get(key);
+      }}
       if (seen.has(key)) return false;
       seen.add(key);
       const node = nodesByKey.get(key);
       if (!node) return false;
-      if (matchesSearch(node)) return true;
-      return explorerChildren(key).some(child => treeNodeMatches(child.key, new Set(seen)));
+      const result = matchesSearch(node) || explorerChildren(key).some(child => treeNodeMatches(child.key, new Set(seen)));
+      if (seen.size === 1) {{
+        treeMatchCache.set(key, result);
+      }}
+      return result;
     }}
 
     function renderExplorerNode(key, depth = 0, stack = new Set(), renderedKeys = new Set()) {{
@@ -988,12 +1009,12 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
             <div class="tree-summary">
               <button class="tree-toggle${{children.length ? "" : " hidden"}}" type="button" data-toggle-key="${{key}}" data-expanded="${{expanded ? "true" : "false"}}">${{expanded ? "−" : "+"}}</button>
               <button class="tree-select" type="button" data-select-key="${{key}}">
-                <strong>${{node.name}}</strong>
+                <strong>${{escapeHtml(node.name)}}</strong>
                 <div class="tree-meta">
-                  <span>${{node.version}}</span>
-                  <span>depth ${{node.depth ?? "?"}}</span>
-                  <span>deps ${{node.dependency_count}}</span>
-                  <span>parents ${{node.parent_count}}</span>
+                  <span>${{escapeHtml(node.version)}}</span>
+                  <span>depth ${{escapeHtml(node.depth ?? "?")}}</span>
+                  <span>deps ${{escapeHtml(node.dependency_count)}}</span>
+                  <span>parents ${{escapeHtml(node.parent_count)}}</span>
                 </div>
               </button>
             </div>
@@ -1008,16 +1029,17 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     }}
 
     function renderExplorer() {{
+      treeMatchCache = new Map();
       const rootKey = GRAPH_DATA.project.root_key;
       const rootNode = nodesByKey.get(rootKey);
       const intro = searchTerm
-        ? `Filtering tree for "${{searchTerm}}"`
+        ? `Filtering tree for "${{escapeHtml(searchTerm)}}"` 
         : "Collapsible dependency tree from the project root.";
       explorerPane.innerHTML = `
         <div class="explorer-shell">
           <div class="explorer-intro">
             <span>${{intro}}</span>
-            <span>${{rootNode ? rootNode.name : "unknown root"}}</span>
+            <span>${{rootNode ? escapeHtml(rootNode.name) : "unknown root"}}</span>
           </div>
           <div class="explorer-tree">
             ${{rootKey ? renderExplorerNode(rootKey) : '<div class="muted">No root package available.</div>'}}
