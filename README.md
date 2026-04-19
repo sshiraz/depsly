@@ -41,7 +41,7 @@ So you can decide **where to spend your time**.
 - Simulates structural impact of removing packages
 - Exports normalized recommendation scans as JSON
 - Saves scans locally for history and comparison
-- Generates an interactive HTML dependency graph explorer
+- Generates an interactive HTML dependency explorer with tree, path, and graph views
 - Runs entirely **locally** (no code upload required)
 
 ---
@@ -125,6 +125,13 @@ depsly compare-scans ~/.depsly/scans/frontend-2026-04-11T10-15-43Z.json ~/.depsl
 ```bash
 depsly graph-html package-lock.json
 ```
+
+The HTML report now opens in an Explorer-first surface:
+
+- `Explorer` view for a readable collapsible dependency tree
+- `Graph` view for neighborhood or full-graph relationship inspection
+- `Path from root` in the sidebar to explain why a package exists
+- Search, keyboard pan/zoom, and box-zoom controls for graph inspection
 
 ---
 
@@ -253,7 +260,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.7)
+Early release (v0.1.8)
 
 Core features are stable:
 - analyze
@@ -265,6 +272,7 @@ Core features are stable:
 - list-scans
 - compare-scans
 - graph-html
+  Explorer-first HTML report with collapsible tree, path view, and neighborhood graph
 - scripts/scan_repos.py batch workflow
 
 ---

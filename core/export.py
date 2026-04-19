@@ -9,7 +9,7 @@ from core.analyze import GraphReport
 from core.models import Recommendation
 from core.scoring import PACKAGE_SCORING_VERSION
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.1.8"
 SCHEMA_VERSION = "1.0"
 
 

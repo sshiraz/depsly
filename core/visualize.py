@@ -229,6 +229,14 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       cursor: pointer;
       font-size: 13px;
     }}
+    .btn.active {{
+      background: rgba(79,209,197,0.16);
+      border-color: rgba(79,209,197,0.55);
+      color: #dffcf8;
+    }}
+    .btn.hidden {{
+      display: none;
+    }}
     .legend {{
       display: flex;
       gap: 12px;
@@ -255,6 +263,151 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
       background-size: 36px 36px;
+    }}
+    .explorer-pane {{
+      position: absolute;
+      inset: 0;
+      overflow: auto;
+      padding: 22px;
+      display: none;
+    }}
+    .explorer-pane.active {{
+      display: block;
+    }}
+    .explorer-shell {{
+      display: grid;
+      gap: 14px;
+      min-height: 100%;
+      align-content: start;
+    }}
+    .explorer-intro {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    .explorer-tree {{
+      display: grid;
+      gap: 10px;
+    }}
+    .tree-children {{
+      margin-left: 22px;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      padding-left: 14px;
+      display: grid;
+      gap: 8px;
+    }}
+    .tree-node {{
+      display: grid;
+      gap: 8px;
+    }}
+    .tree-entry {{
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+      display: grid;
+      gap: 8px;
+    }}
+    .tree-entry.active {{
+      border-color: rgba(79,209,197,0.55);
+      box-shadow: 0 12px 28px rgba(79,209,197,0.12);
+    }}
+    .tree-summary {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .tree-toggle {{
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      color: var(--ink);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }}
+    .tree-toggle.hidden {{
+      visibility: hidden;
+    }}
+    .tree-select {{
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+      min-width: 0;
+    }}
+    .tree-select strong {{
+      display: block;
+      font-size: 14px;
+      line-height: 1.2;
+      word-break: break-word;
+    }}
+    .tree-meta {{
+      color: var(--muted);
+      font-size: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .tree-badges {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      font-size: 11px;
+      color: var(--ink);
+    }}
+    .badge.root {{
+      border-color: rgba(246,173,85,0.4);
+    }}
+    .badge.direct {{
+      border-color: rgba(125,211,252,0.4);
+    }}
+    .badge.direct-dev {{
+      border-color: rgba(167,139,250,0.4);
+    }}
+    .badge.transitive {{
+      border-color: rgba(52,211,153,0.4);
+    }}
+    .zoom-overlay {{
+      position: absolute;
+      border: 1px solid rgba(79,209,197,0.95);
+      background: rgba(79,209,197,0.14);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+      pointer-events: none;
+      display: none;
+    }}
+    .mode-chip {{
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(12,18,35,0.88);
+      border: 1px solid rgba(79,209,197,0.35);
+      color: #dffcf8;
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      display: none;
+      pointer-events: none;
     }}
     svg {{
       width: 100%;
@@ -352,6 +505,29 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       letter-spacing: 0.08em;
       margin-bottom: 4px;
     }}
+    .path-strip {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }}
+    .path-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--ink);
+      max-width: 100%;
+    }}
+    .path-arrow {{
+      color: var(--muted);
+      font-size: 12px;
+      align-self: center;
+    }}
     @media (max-width: 1080px) {{
       .shell {{
         grid-template-columns: 1fr;
@@ -378,6 +554,9 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
           <label class="search">
             <input id="searchInput" type="search" placeholder="Search package name or version">
           </label>
+          <button class="btn active" id="surfaceModeBtn" type="button">Explorer</button>
+          <button class="btn active" id="viewModeBtn" type="button">Neighborhood</button>
+          <button class="btn" id="boxZoomBtn" type="button">Box zoom</button>
           <button class="btn" id="resetViewBtn" type="button">Reset view</button>
           <button class="btn" id="clearSelectionBtn" type="button">Clear selection</button>
         </div>
@@ -389,6 +568,9 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         </div>
       </div>
       <div class="viewport">
+        <div class="mode-chip" id="modeChip">Box zoom mode</div>
+        <div class="zoom-overlay" id="zoomOverlay"></div>
+        <div class="explorer-pane" id="explorerPane"></div>
         <svg id="graphSvg" viewBox="0 0 1600 900" aria-label="Dependency graph">
           <g id="graphViewport"></g>
         </svg>
@@ -406,8 +588,12 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         <h2>How to use this</h2>
         <ul class="list">
           <li>Search to isolate a package or version.</li>
-          <li>Click a package to highlight its immediate neighborhood.</li>
-          <li>Drag to pan, and use the mouse wheel to zoom.</li>
+          <li>Use Explorer view for a readable tree of direct and transitive dependencies.</li>
+          <li>Neighborhood mode shows only the selected package and its immediate relationships.</li>
+          <li>Click a package to focus its immediate neighborhood, or switch to full graph for the complete map.</li>
+          <li>Use the Path view in the sidebar to see one route from the root to the selected package.</li>
+          <li>Drag to pan, use the mouse wheel to zoom at the cursor, or toggle box zoom to frame an area.</li>
+          <li>Use arrow keys to pan, <code>Option</code>/<code>Ctrl</code> + arrow keys for larger jumps, and <code>+</code>/<code>-</code> to zoom.</li>
           <li>Use depth columns to understand how direct and transitive packages are layered.</li>
         </ul>
       </div>
@@ -418,15 +604,26 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
 
     const svg = document.getElementById("graphSvg");
     const viewport = document.getElementById("graphViewport");
+    const viewportFrame = document.querySelector(".viewport");
+    const explorerPane = document.getElementById("explorerPane");
     const searchInput = document.getElementById("searchInput");
     const selectionCard = document.getElementById("selectionCard");
     const summary = document.getElementById("summary");
+    const surfaceModeBtn = document.getElementById("surfaceModeBtn");
+    const viewModeBtn = document.getElementById("viewModeBtn");
+    const boxZoomBtn = document.getElementById("boxZoomBtn");
     const resetViewBtn = document.getElementById("resetViewBtn");
     const clearSelectionBtn = document.getElementById("clearSelectionBtn");
+    const zoomOverlay = document.getElementById("zoomOverlay");
+    const modeChip = document.getElementById("modeChip");
 
     const nodeWidth = 164;
     const nodeHeight = 56;
-    const depthGap = 260;
+    const neighborhoodNodeWidth = 220;
+    const neighborhoodNodeHeight = 72;
+    const depthGap = 96;
+    const laneGap = 194;
+    const maxRowsPerLane = 18;
     const topPadding = 90;
     const leftPadding = 110;
     const layerGap = 86;
@@ -459,9 +656,23 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     }}
 
     const orderedDepths = Array.from(layers.keys()).sort((a, b) => a - b);
-    const layerHeights = orderedDepths.map(depth => layers.get(depth).length);
+    const laneLayouts = new Map();
+    const layerHeights = orderedDepths.map(depth => Math.min(layers.get(depth).length, maxRowsPerLane));
     const canvasHeight = Math.max(900, topPadding + Math.max(...layerHeights, 1) * layerGap + 120);
-    const canvasWidth = Math.max(1600, leftPadding + orderedDepths.length * depthGap + 320);
+
+    let runningX = leftPadding;
+    orderedDepths.forEach((depth) => {{
+      const layerNodes = layers.get(depth);
+      const laneCount = Math.max(1, Math.ceil(layerNodes.length / maxRowsPerLane));
+      const width = nodeWidth + (laneCount - 1) * laneGap;
+      laneLayouts.set(depth, {{
+        x: runningX,
+        width,
+        laneCount,
+      }});
+      runningX += width + depthGap;
+    }});
+    const canvasWidth = Math.max(1600, runningX + 220);
     svg.setAttribute("viewBox", `0 0 ${{canvasWidth}} ${{canvasHeight}}`);
 
     const positions = new Map();
@@ -470,12 +681,16 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         if (b.dependent_count !== a.dependent_count) return b.dependent_count - a.dependent_count;
         return a.key.localeCompare(b.key);
       }});
-      const layerHeight = (layerNodes.length - 1) * layerGap;
+      const layout = laneLayouts.get(depth);
+      const rowCount = Math.min(layerNodes.length, maxRowsPerLane);
+      const layerHeight = (rowCount - 1) * layerGap;
       const startY = Math.max(topPadding, (canvasHeight - layerHeight) / 2);
       layerNodes.forEach((node, index) => {{
+        const lane = Math.floor(index / maxRowsPerLane);
+        const row = index % maxRowsPerLane;
         positions.set(node.key, {{
-          x: leftPadding + depthIndex * depthGap,
-          y: startY + index * layerGap
+          x: layout.x + lane * laneGap,
+          y: startY + row * layerGap
         }});
       }});
     }});
@@ -498,9 +713,144 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
     let selectedKey = null;
     let searchTerm = "";
     let transform = {{ x: 0, y: 0, scale: 1 }};
+    let surfaceMode = "explorer";
+    let viewMode = "neighborhood";
+    let boxZoomMode = false;
+    let dragState = null;
+    let boxZoomStart = null;
+    const collapsedKeys = new Set();
+    const expandedKeys = new Set();
 
     function applyTransform() {{
       viewport.setAttribute("transform", `translate(${{transform.x}}, ${{transform.y}}) scale(${{transform.scale}})`);
+    }}
+
+    function clampScale(scale) {{
+      return Math.max(0.45, Math.min(12, scale));
+    }}
+
+    function currentNodeWidth() {{
+      return viewMode === "neighborhood" ? neighborhoodNodeWidth : nodeWidth;
+    }}
+
+    function currentNodeHeight() {{
+      return viewMode === "neighborhood" ? neighborhoodNodeHeight : nodeHeight;
+    }}
+
+    function currentLabelFontSize() {{
+      return viewMode === "neighborhood" ? "15" : "13";
+    }}
+
+    function currentSubFontSize() {{
+      return viewMode === "neighborhood" ? "12" : "11";
+    }}
+
+    function currentLabelMaxChars() {{
+      return viewMode === "neighborhood" ? 28 : 22;
+    }}
+
+    function fitWorldRect(x, y, width, height, padding = 40) {{
+      const frame = viewportFrame.getBoundingClientRect();
+      const safeWidth = Math.max(width, 1);
+      const safeHeight = Math.max(height, 1);
+      const nextScale = clampScale(Math.min(
+        (frame.width - padding * 2) / safeWidth,
+        (frame.height - padding * 2) / safeHeight
+      ));
+      transform = {{
+        scale: nextScale,
+        x: (frame.width - safeWidth * nextScale) / 2 - x * nextScale,
+        y: (frame.height - safeHeight * nextScale) / 2 - y * nextScale
+      }};
+      applyTransform();
+    }}
+
+    function setBoxZoomMode(enabled) {{
+      boxZoomMode = enabled;
+      boxZoomBtn.classList.toggle("active", enabled);
+      modeChip.style.display = enabled ? "block" : "none";
+      svg.style.cursor = enabled ? "crosshair" : "";
+    }}
+
+    function setViewMode(mode) {{
+      viewMode = mode;
+      viewModeBtn.textContent = mode === "full" ? "Full graph" : "Neighborhood";
+      viewModeBtn.classList.toggle("active", mode === "neighborhood");
+    }}
+
+    function setSurfaceMode(mode) {{
+      surfaceMode = mode;
+      const explorerActive = mode === "explorer";
+      surfaceModeBtn.textContent = explorerActive ? "Explorer" : "Graph";
+      surfaceModeBtn.classList.toggle("active", explorerActive);
+      explorerPane.classList.toggle("active", explorerActive);
+      svg.style.display = explorerActive ? "none" : "block";
+      viewModeBtn.classList.toggle("hidden", explorerActive);
+      boxZoomBtn.classList.toggle("hidden", explorerActive);
+      resetViewBtn.textContent = explorerActive ? "Reset tree" : "Reset view";
+      if (explorerActive) {{
+        setBoxZoomMode(false);
+      }}
+    }}
+
+    function zoomAtScreenPoint(nextScale, screenX, screenY) {{
+      const clamped = clampScale(nextScale);
+      const worldX = (screenX - transform.x) / transform.scale;
+      const worldY = (screenY - transform.y) / transform.scale;
+      transform.scale = clamped;
+      transform.x = screenX - worldX * clamped;
+      transform.y = screenY - worldY * clamped;
+      applyTransform();
+    }}
+
+    function pathToNode(key) {{
+      const rootKey = GRAPH_DATA.project.root_key;
+      if (!key || !rootKey || !nodesByKey.has(key) || !nodesByKey.has(rootKey)) return [];
+      if (key === rootKey) return [rootKey];
+
+      const queue = [rootKey];
+      const seen = new Set([rootKey]);
+      const prev = new Map();
+
+      while (queue.length) {{
+        const current = queue.shift();
+        for (const next of outgoing.get(current) || []) {{
+          if (seen.has(next)) continue;
+          seen.add(next);
+          prev.set(next, current);
+          if (next === key) {{
+            const path = [key];
+            let cursor = key;
+            while (prev.has(cursor)) {{
+              cursor = prev.get(cursor);
+              path.push(cursor);
+            }}
+            return path.reverse();
+          }}
+          queue.push(next);
+        }}
+      }}
+
+      return [key];
+    }}
+
+    function renderPath(path) {{
+      if (!path.length) {{
+        return `<div class="muted">No root path available for this package.</div>`;
+      }}
+      return `
+        <div class="path-strip">
+          ${{path.map((item, index) => `
+            ${{index ? '<span class="path-arrow">→</span>' : ""}}
+            <span class="path-chip">${{item}}</span>
+          `).join("")}}
+        </div>
+      `;
+    }}
+
+    function scopeBadge(node) {{
+      const scopeText = node.scope === "direct" && node.is_dev_dependency ? "direct dev" : node.scope;
+      return `<span class="badge ${{node.tone}}">${{scopeText}}</span>`;
     }}
 
     function renderSidebar(node) {{
@@ -510,6 +860,7 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       }}
       const parentList = (incoming.get(node.key) || []).sort();
       const depList = (outgoing.get(node.key) || []).sort();
+      const path = pathToNode(node.key);
       selectionCard.innerHTML = `
         <div class="pill" style="margin-bottom: 10px;">${{node.scope}} • ${{node.tone}}</div>
         <h2 style="margin: 0 0 4px;">${{node.name}}</h2>
@@ -522,6 +873,9 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
           <div><strong>Dependents</strong>${{node.dependent_count}}</div>
           <div><strong>Root dev dependency</strong>${{node.scope === "root" ? "n/a" : node.is_dev_dependency === true ? "yes" : node.is_dev_dependency === false ? "no" : "unknown"}}</div>
         </div>
+        <div style="height: 12px;"></div>
+        <strong class="muted">Path from root</strong>
+        ${{renderPath(path)}}
         <div style="height: 12px;"></div>
         <strong class="muted">Depends on</strong>
         <ul class="list">${{depList.length ? depList.map(item => `<li>${{item}}</li>`).join("") : "<li>None</li>"}}</ul>
@@ -547,13 +901,188 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       return edge.source === selectedKey || edge.target === selectedKey;
     }}
 
+    function buildVisibleNodeKeys() {{
+      const matchingKeys = new Set(
+        GRAPH_DATA.nodes.filter(node => matchesSearch(node)).map(node => node.key)
+      );
+
+      if (viewMode === "full") {{
+        return matchingKeys;
+      }}
+
+      const visible = new Set();
+      const rootKey = GRAPH_DATA.project.root_key;
+
+      function includeNeighborhood(key) {{
+        if (!key || !nodesByKey.has(key)) return;
+        visible.add(key);
+        for (const parent of incoming.get(key) || []) visible.add(parent);
+        for (const child of outgoing.get(key) || []) visible.add(child);
+      }}
+
+      if (selectedKey) {{
+        includeNeighborhood(selectedKey);
+      }} else if (searchTerm && matchingKeys.size > 0) {{
+        for (const key of matchingKeys) includeNeighborhood(key);
+      }} else {{
+        includeNeighborhood(rootKey);
+      }}
+
+      if (searchTerm) {{
+        for (const key of Array.from(visible)) {{
+          const node = nodesByKey.get(key);
+          if (!node || matchesSearch(node)) continue;
+          const linkedToMatch =
+            (incoming.get(key) || []).some(parent => matchingKeys.has(parent))
+            || (outgoing.get(key) || []).some(child => matchingKeys.has(child));
+          if (!linkedToMatch && key !== selectedKey && key !== rootKey) {{
+            visible.delete(key);
+          }}
+        }}
+      }}
+
+      return visible;
+    }}
+
+    function explorerChildren(key) {{
+      const children = (outgoing.get(key) || []).map(childKey => nodesByKey.get(childKey)).filter(Boolean);
+      children.sort((a, b) => {{
+        if ((a.depth ?? 999) !== (b.depth ?? 999)) return (a.depth ?? 999) - (b.depth ?? 999);
+        if (b.dependent_count !== a.dependent_count) return b.dependent_count - a.dependent_count;
+        return a.key.localeCompare(b.key);
+      }});
+      return children;
+    }}
+
+    function treeNodeMatches(key, seen = new Set()) {{
+      if (seen.has(key)) return false;
+      seen.add(key);
+      const node = nodesByKey.get(key);
+      if (!node) return false;
+      if (matchesSearch(node)) return true;
+      return explorerChildren(key).some(child => treeNodeMatches(child.key, new Set(seen)));
+    }}
+
+    function renderExplorerNode(key, depth = 0, stack = new Set(), renderedKeys = new Set()) {{
+      const node = nodesByKey.get(key);
+      if (!node) return "";
+      if (stack.has(key)) return "";
+      if (searchTerm && !treeNodeMatches(key)) return "";
+
+      const children = explorerChildren(key).filter(child => child && child.key !== key);
+      const alreadyRendered = renderedKeys.has(key);
+      const expanded = !collapsedKeys.has(key) && (searchTerm || expandedKeys.has(key) || depth === 0);
+      const nextStack = new Set(stack);
+      nextStack.add(key);
+      const nextRenderedKeys = new Set(renderedKeys);
+      nextRenderedKeys.add(key);
+      const childMarkup = expanded
+        ? children.map(child => renderExplorerNode(child.key, depth + 1, nextStack, nextRenderedKeys)).join("")
+        : "";
+      const activeClass = selectedKey === key ? " active" : "";
+      const duplicateBadge = alreadyRendered ? '<span class="badge">shared</span>' : "";
+
+      return `
+        <div class="tree-node">
+          <div class="tree-entry${{activeClass}}">
+            <div class="tree-summary">
+              <button class="tree-toggle${{children.length ? "" : " hidden"}}" type="button" data-toggle-key="${{key}}" data-expanded="${{expanded ? "true" : "false"}}">${{expanded ? "−" : "+"}}</button>
+              <button class="tree-select" type="button" data-select-key="${{key}}">
+                <strong>${{node.name}}</strong>
+                <div class="tree-meta">
+                  <span>${{node.version}}</span>
+                  <span>depth ${{node.depth ?? "?"}}</span>
+                  <span>deps ${{node.dependency_count}}</span>
+                  <span>parents ${{node.parent_count}}</span>
+                </div>
+              </button>
+            </div>
+            <div class="tree-badges">
+              ${{scopeBadge(node)}}
+              ${{duplicateBadge}}
+            </div>
+          </div>
+          ${{expanded && childMarkup ? `<div class="tree-children">${{childMarkup}}</div>` : ""}}
+        </div>
+      `;
+    }}
+
+    function renderExplorer() {{
+      const rootKey = GRAPH_DATA.project.root_key;
+      const rootNode = nodesByKey.get(rootKey);
+      const intro = searchTerm
+        ? `Filtering tree for "${{searchTerm}}"`
+        : "Collapsible dependency tree from the project root.";
+      explorerPane.innerHTML = `
+        <div class="explorer-shell">
+          <div class="explorer-intro">
+            <span>${{intro}}</span>
+            <span>${{rootNode ? rootNode.name : "unknown root"}}</span>
+          </div>
+          <div class="explorer-tree">
+            ${{rootKey ? renderExplorerNode(rootKey) : '<div class="muted">No root package available.</div>'}}
+          </div>
+        </div>
+      `;
+
+      explorerPane.querySelectorAll("[data-toggle-key]").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          const key = button.dataset.toggleKey;
+          const expanded = button.dataset.expanded === "true";
+          if (expanded) {{
+            expandedKeys.delete(key);
+            collapsedKeys.add(key);
+          }} else {{
+            collapsedKeys.delete(key);
+            expandedKeys.add(key);
+          }}
+          renderExplorer();
+        }});
+      }});
+
+      explorerPane.querySelectorAll("[data-select-key]").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          const key = button.dataset.selectKey;
+          selectedKey = key === selectedKey ? null : key;
+          renderSidebar(selectedKey ? nodesByKey.get(selectedKey) : null);
+          renderExplorer();
+        }});
+      }});
+    }}
+
+    function visibleBounds(visibleKeys) {{
+      const visibleNodes = Array.from(visibleKeys)
+        .map(key => positions.get(key))
+        .filter(Boolean);
+      if (!visibleNodes.length) {{
+        return {{ x: 0, y: 0, width: canvasWidth, height: canvasHeight }};
+      }}
+
+      const minX = Math.min(...visibleNodes.map(point => point.x));
+      const minY = Math.min(...visibleNodes.map(point => point.y));
+      const maxX = Math.max(...visibleNodes.map(point => point.x + currentNodeWidth()));
+      const maxY = Math.max(...visibleNodes.map(point => point.y + currentNodeHeight()));
+      return {{
+        x: Math.max(0, minX - 80),
+        y: Math.max(0, minY - 80),
+        width: Math.min(canvasWidth, maxX - minX + Math.max(160, currentNodeWidth() - nodeWidth + 160)),
+        height: Math.min(canvasHeight, maxY - minY + 160)
+      }};
+    }}
+
     function draw() {{
       viewport.innerHTML = "";
+      const displayNodeWidth = currentNodeWidth();
+      const displayNodeHeight = currentNodeHeight();
+      const visibleKeys = buildVisibleNodeKeys();
+      const visibleDepths = orderedDepths.filter(depth =>
+        layers.get(depth).some(node => visibleKeys.has(node.key))
+      );
 
-      for (const depth of orderedDepths) {{
-        const x = positions.get(layers.get(depth)[0].key).x;
+      for (const depth of visibleDepths) {{
+        const layout = laneLayouts.get(depth);
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", String(x + nodeWidth / 2));
+        label.setAttribute("x", String(layout.x + layout.width / 2));
         label.setAttribute("y", "38");
         label.setAttribute("text-anchor", "middle");
         label.setAttribute("class", "depth-label");
@@ -566,12 +1095,13 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         const target = positions.get(edge.target);
         const sourceNode = nodesByKey.get(edge.source);
         const targetNode = nodesByKey.get(edge.target);
-        if (!source || !target || !matchesSearch(sourceNode) || !matchesSearch(targetNode)) continue;
+        if (!source || !target || !sourceNode || !targetNode) continue;
+        if (!visibleKeys.has(edge.source) || !visibleKeys.has(edge.target)) continue;
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        const startX = source.x + nodeWidth;
-        const startY = source.y + nodeHeight / 2;
+        const startX = source.x + displayNodeWidth;
+        const startY = source.y + displayNodeHeight / 2;
         const endX = target.x;
-        const endY = target.y + nodeHeight / 2;
+        const endY = target.y + displayNodeHeight / 2;
         const curve = Math.max(40, (endX - startX) * 0.45);
         path.setAttribute("d", `M ${{startX}} ${{startY}} C ${{startX + curve}} ${{startY}}, ${{endX - curve}} ${{endY}}, ${{endX}} ${{endY}}`);
         path.setAttribute("class", edgeActive(edge) ? "edge active" : "edge");
@@ -582,7 +1112,7 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
       }}
 
       for (const node of GRAPH_DATA.nodes) {{
-        if (!matchesSearch(node)) continue;
+        if (!visibleKeys.has(node.key)) continue;
         const position = positions.get(node.key);
         const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
         group.setAttribute("transform", `translate(${{position.x}}, ${{position.y}})`);
@@ -590,87 +1120,209 @@ def render_graph_html(view_model: dict, *, source_lockfile: Path) -> str:
         group.dataset.key = node.key;
 
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        rect.setAttribute("width", String(nodeWidth));
-        rect.setAttribute("height", String(nodeHeight));
+        rect.setAttribute("width", String(displayNodeWidth));
+        rect.setAttribute("height", String(displayNodeHeight));
         rect.setAttribute("class", "node-rect");
         rect.setAttribute("fill", toneColor[node.tone] || toneColor.other);
         rect.setAttribute("fill-opacity", node.key === selectedKey ? "0.34" : "0.18");
         group.appendChild(rect);
 
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", "12");
-        label.setAttribute("y", "24");
+        label.setAttribute("x", "14");
+        label.setAttribute("y", viewMode === "neighborhood" ? "29" : "24");
         label.setAttribute("class", "node-label");
-        label.textContent = node.name.length > 22 ? `${{node.name.slice(0, 19)}}...` : node.name;
+        label.setAttribute("font-size", currentLabelFontSize());
+        label.textContent = node.name.length > currentLabelMaxChars()
+          ? `${{node.name.slice(0, currentLabelMaxChars() - 3)}}...`
+          : node.name;
         group.appendChild(label);
 
         const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        sub.setAttribute("x", "12");
-        sub.setAttribute("y", "42");
+        sub.setAttribute("x", "14");
+        sub.setAttribute("y", viewMode === "neighborhood" ? "50" : "42");
         sub.setAttribute("class", "node-sub");
+        sub.setAttribute("font-size", currentSubFontSize());
         const scopeText = node.scope === "direct" && node.is_dev_dependency ? "direct dev" : node.scope;
         sub.textContent = `${{node.version}} • ${{scopeText}} • ↑${{node.dependent_count}} ↓${{node.dependency_count}}`;
         group.appendChild(sub);
 
         group.addEventListener("click", () => {{
+          if (boxZoomMode) return;
           selectedKey = node.key === selectedKey ? null : node.key;
           renderSidebar(selectedKey ? nodesByKey.get(selectedKey) : null);
-          draw();
+          resetView();
         }});
         viewport.appendChild(group);
       }}
+
+      return visibleBounds(visibleKeys);
     }}
 
     function resetView() {{
-      transform = {{ x: 0, y: 0, scale: 1 }};
-      applyTransform();
+      if (surfaceMode === "explorer") {{
+        collapsedKeys.clear();
+        expandedKeys.clear();
+        renderExplorer();
+        return;
+      }}
+      const bounds = draw();
+      fitWorldRect(bounds.x, bounds.y, bounds.width, bounds.height, 32);
     }}
 
+    surfaceModeBtn.addEventListener("click", () => {{
+      setSurfaceMode(surfaceMode === "explorer" ? "graph" : "explorer");
+      if (surfaceMode === "explorer") {{
+        renderExplorer();
+      }} else {{
+        resetView();
+      }}
+    }});
+    viewModeBtn.addEventListener("click", () => {{
+      setViewMode(viewMode === "full" ? "neighborhood" : "full");
+      resetView();
+    }});
+    boxZoomBtn.addEventListener("click", () => {{
+      setBoxZoomMode(!boxZoomMode);
+    }});
     resetViewBtn.addEventListener("click", resetView);
     clearSelectionBtn.addEventListener("click", () => {{
       selectedKey = null;
       renderSidebar(null);
-      draw();
+      if (surfaceMode === "explorer") {{
+        renderExplorer();
+      }} else {{
+        resetView();
+      }}
     }});
 
     searchInput.addEventListener("input", (event) => {{
       searchTerm = event.target.value.trim().toLowerCase();
-      draw();
+      if (surfaceMode === "explorer") {{
+        renderExplorer();
+      }} else {{
+        resetView();
+      }}
     }});
 
-    let dragging = false;
-    let dragStart = null;
-
     svg.addEventListener("mousedown", (event) => {{
-      dragging = true;
-      dragStart = {{
+      if (event.button !== 0) return;
+      if (boxZoomMode) {{
+        const frame = viewportFrame.getBoundingClientRect();
+        boxZoomStart = {{
+          x: event.clientX - frame.left,
+          y: event.clientY - frame.top
+        }};
+        zoomOverlay.style.display = "block";
+        zoomOverlay.style.left = `${{boxZoomStart.x}}px`;
+        zoomOverlay.style.top = `${{boxZoomStart.y}}px`;
+        zoomOverlay.style.width = "0px";
+        zoomOverlay.style.height = "0px";
+        return;
+      }}
+      if (event.target.closest(".node-card")) return;
+      dragState = {{
         x: event.clientX - transform.x,
         y: event.clientY - transform.y
       }};
       svg.classList.add("dragging");
     }});
     window.addEventListener("mouseup", () => {{
-      dragging = false;
-      dragStart = null;
+      if (boxZoomStart) {{
+        const left = parseFloat(zoomOverlay.style.left || "0");
+        const top = parseFloat(zoomOverlay.style.top || "0");
+        const width = parseFloat(zoomOverlay.style.width || "0");
+        const height = parseFloat(zoomOverlay.style.height || "0");
+        zoomOverlay.style.display = "none";
+        if (width > 12 && height > 12) {{
+          fitWorldRect(
+            (left - transform.x) / transform.scale,
+            (top - transform.y) / transform.scale,
+            width / transform.scale,
+            height / transform.scale,
+            24
+          );
+        }}
+        boxZoomStart = null;
+      }}
+      dragState = null;
       svg.classList.remove("dragging");
     }});
     window.addEventListener("mousemove", (event) => {{
-      if (!dragging || !dragStart) return;
-      transform.x = event.clientX - dragStart.x;
-      transform.y = event.clientY - dragStart.y;
+      if (boxZoomStart) {{
+        const frame = viewportFrame.getBoundingClientRect();
+        const currentX = event.clientX - frame.left;
+        const currentY = event.clientY - frame.top;
+        const left = Math.min(boxZoomStart.x, currentX);
+        const top = Math.min(boxZoomStart.y, currentY);
+        zoomOverlay.style.left = `${{left}}px`;
+        zoomOverlay.style.top = `${{top}}px`;
+        zoomOverlay.style.width = `${{Math.abs(currentX - boxZoomStart.x)}}px`;
+        zoomOverlay.style.height = `${{Math.abs(currentY - boxZoomStart.y)}}px`;
+        return;
+      }}
+      if (!dragState) return;
+      transform.x = event.clientX - dragState.x;
+      transform.y = event.clientY - dragState.y;
       applyTransform();
     }});
     svg.addEventListener("wheel", (event) => {{
       event.preventDefault();
       const factor = event.deltaY < 0 ? 1.08 : 0.92;
-      const next = Math.max(0.45, Math.min(2.4, transform.scale * factor));
-      transform.scale = next;
-      applyTransform();
+      const frame = viewportFrame.getBoundingClientRect();
+      const pointerX = event.clientX - frame.left;
+      const pointerY = event.clientY - frame.top;
+      zoomAtScreenPoint(transform.scale * factor, pointerX, pointerY);
     }}, {{ passive: false }});
 
+    window.addEventListener("keydown", (event) => {{
+      const tagName = event.target?.tagName;
+      if (tagName === "INPUT" || tagName === "TEXTAREA" || event.target?.isContentEditable) return;
+
+      const panStep = (event.altKey || event.ctrlKey) ? 360 : event.shiftKey ? 180 : 90;
+      const frame = viewportFrame.getBoundingClientRect();
+      const centerX = frame.width / 2;
+      const centerY = frame.height / 2;
+
+      if (event.key === "ArrowLeft") {{
+        event.preventDefault();
+        transform.x += panStep;
+        applyTransform();
+        return;
+      }}
+      if (event.key === "ArrowRight") {{
+        event.preventDefault();
+        transform.x -= panStep;
+        applyTransform();
+        return;
+      }}
+      if (event.key === "ArrowUp") {{
+        event.preventDefault();
+        transform.y += panStep;
+        applyTransform();
+        return;
+      }}
+      if (event.key === "ArrowDown") {{
+        event.preventDefault();
+        transform.y -= panStep;
+        applyTransform();
+        return;
+      }}
+      if (event.key === "+" || event.key === "=") {{
+        event.preventDefault();
+        zoomAtScreenPoint(transform.scale * 1.12, centerX, centerY);
+        return;
+      }}
+      if (event.key === "-"
+          || event.key === "_") {{
+        event.preventDefault();
+        zoomAtScreenPoint(transform.scale * 0.88, centerX, centerY);
+      }}
+    }});
+
+    setSurfaceMode(surfaceMode);
+    setViewMode(viewMode);
     renderSidebar(null);
-    draw();
-    applyTransform();
+    renderExplorer();
   </script>
 </body>
 </html>"""

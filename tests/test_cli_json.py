@@ -137,7 +137,7 @@ class TestRecommendJson:
         scan = parsed["scan"]
         assert scan["schema_version"] == "1.0"
         assert scan["scoring_version"] == "v1"
-        assert scan["tool_version"] == "0.1.0"
+        assert scan["tool_version"] == "0.1.8"
         assert scan["include_dev"] is True
         assert scan["limit"] == 3
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", scan["timestamp"])

@@ -56,6 +56,16 @@ A **shared node** is a node referenced by multiple parents (diamond dependency p
 - Traversal visits shared nodes once (via visited set)
 - Max depth computes and memoizes the full subtree depth of shared nodes, reusing it for every parent that references them — this ensures correct max depth even in diamond patterns
 
+## Visualization Notes
+
+The HTML explorer intentionally does **not** try to show the full graph at once as the primary experience.
+
+- Explorer view is the default surface
+- Explorer renders a collapsible tree rooted at `graph.root_key`
+- Shared nodes may appear under more than one parent in the tree, but repeated appearances are marked as shared and do not need to recursively expand the entire shared subtree by default
+- Graph view is secondary and is optimized for neighborhood inspection first, with full-graph mode available as an explicit toggle
+- Path view shows one root-to-node route to explain why a dependency exists
+
 ## Depth
 
 **Depth** is measured from a start node (default: root).

@@ -41,7 +41,14 @@ class TestGraphHtmlCli:
         html = output_path.read_text(encoding="utf-8")
         assert "<title>Depsly Graph • app</title>" in html
         assert "Dependency Graph" in html
+        assert "Explorer" in html
         assert "Search package name or version" in html
+        assert "Neighborhood" in html
+        assert "Box zoom" in html
+        assert "Option" in html
+        assert "Ctrl" in html
+        assert "Use arrow keys to pan" in html
+        assert "Path from root" in html
         assert "Direct dev" in html
         assert "react@18.2.0" in html
         assert "eslint@9.39.4" in html
