@@ -11,6 +11,9 @@ from core.scoring import PACKAGE_SCORING_VERSION
 
 TOOL_VERSION = "0.1.8"
 SCHEMA_VERSION = "1.0"
+ANALYZE_SCHEMA_VERSION = "1.0"
+TRACE_SCHEMA_VERSION = "1.0"
+SIMULATE_REMOVE_SCHEMA_VERSION = "1.0"
 
 
 def scan_timestamp() -> str:
@@ -30,6 +33,18 @@ def _classification_scope(recommendation: Recommendation) -> str:
     if recommendation.classification.is_transitive_dependency:
         return "transitive"
     return "unknown"
+
+
+def export_command_meta(*, command: str, schema_version: str, **options) -> dict:
+    """Build stable metadata for machine-readable command outputs."""
+    meta = {
+        "command": command,
+        "schema_version": schema_version,
+        "timestamp": scan_timestamp(),
+        "tool_version": TOOL_VERSION,
+    }
+    meta.update(options)
+    return meta
 
 
 def export_recommendations(

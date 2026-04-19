@@ -27,6 +27,7 @@ class TestAnalyzeJson:
         result = runner.invoke(cli, ["analyze", LOCKFILE, "--json"])
         parsed = json.loads(result.output)
         expected = {
+            "meta",
             "project",
             "risk",
             "dependencies",
@@ -48,6 +49,18 @@ class TestAnalyzeJson:
             assert "category" in comp
             assert "points" in comp
             assert "reason" in comp
+
+    def test_meta_structure(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", LOCKFILE, "--json"])
+        parsed = json.loads(result.output)
+        meta = parsed["meta"]
+        assert meta["command"] == "analyze"
+        assert meta["schema_version"] == "1.0"
+        assert meta["tool_version"] == "0.1.8"
+        assert meta["include_dev"] is True
+        assert meta["fanout_limit"] == 10
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
 
     def test_no_ansi_codes(self):
         runner = CliRunner()
@@ -184,3 +197,93 @@ class TestRecommendJson:
         result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "1"])
         assert result.exit_code == 0
         assert result.output.startswith("Depsly Recommendations")
+
+
+class TestTraceJson:
+    def test_valid_json(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", LOCKFILE, "react@19.1.1", "--json"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert isinstance(parsed, dict)
+
+    def test_expected_top_level_keys(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", LOCKFILE, "react@19.1.1", "--json"])
+        parsed = json.loads(result.output)
+        assert list(parsed.keys()) == [
+            "meta",
+            "result",
+        ]
+
+    def test_meta_structure(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", LOCKFILE, "react@19.1.1", "--json"])
+        parsed = json.loads(result.output)
+        meta = parsed["meta"]
+        assert meta["command"] == "trace"
+        assert meta["schema_version"] == "1.0"
+        assert meta["tool_version"] == "0.1.8"
+        assert meta["include_dev"] is True
+        assert meta["max_paths"] == 3
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
+
+    def test_no_ansi_codes(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", LOCKFILE, "react@19.1.1", "--json"])
+        assert "\x1b[" not in result.output
+        assert not re.search(r"\x1b\[[\d;]*m", result.output)
+
+
+class TestSimulateRemoveJson:
+    def test_valid_json(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", LOCKFILE, "react", "--json"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert isinstance(parsed, dict)
+
+    def test_expected_top_level_keys(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", LOCKFILE, "react", "--json"])
+        parsed = json.loads(result.output)
+        assert list(parsed.keys()) == [
+            "meta",
+            "result",
+        ]
+
+    def test_before_after_shape(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", LOCKFILE, "react", "--json"])
+        parsed = json.loads(result.output)
+        for phase in ("before", "after"):
+            report = parsed["result"][phase]
+            assert list(report.keys()) == [
+                "total_nodes",
+                "total_edges",
+                "max_depth",
+                "has_cycle",
+                "direct_dependency_count",
+                "transitive_dependency_count",
+                "unresolved_dependency_count",
+                "leaf_package_count",
+                "top_packages_by_fanout",
+                "top_packages_by_blast_radius",
+            ]
+
+    def test_meta_structure(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", LOCKFILE, "react", "--json"])
+        parsed = json.loads(result.output)
+        meta = parsed["meta"]
+        assert meta["command"] == "simulate-remove"
+        assert meta["schema_version"] == "1.0"
+        assert meta["tool_version"] == "0.1.8"
+        assert meta["include_dev"] is True
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
+
+    def test_no_ansi_codes(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", LOCKFILE, "react", "--json"])
+        assert "\x1b[" not in result.output
+        assert not re.search(r"\x1b\[[\d;]*m", result.output)

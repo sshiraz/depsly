@@ -10,7 +10,13 @@ import click
 
 from core.analyze import analyze_graph, analyze_removal_impact, GraphReport, RemovalSimulationReport
 from core.classify import classify_all_packages
-from core.export import export_recommendations
+from core.export import (
+    ANALYZE_SCHEMA_VERSION,
+    SIMULATE_REMOVE_SCHEMA_VERSION,
+    TRACE_SCHEMA_VERSION,
+    export_command_meta,
+    export_recommendations,
+)
 from core.graph import build_graph
 from core.ingestion import parse_package_lock
 from core.recommend import recommend_packages
@@ -554,6 +560,84 @@ def _build_recommendation_export(lockfile: Path, include_dev: bool, limit: int) 
     return build_recommendation_scan(lockfile, include_dev=include_dev, limit=limit)
 
 
+def _graph_report_json(report: GraphReport) -> dict:
+    """Serialize a GraphReport into a stable machine-readable shape."""
+    return {
+        "total_nodes": report.total_nodes,
+        "total_edges": report.total_edges,
+        "max_depth": report.max_depth,
+        "has_cycle": report.has_cycle,
+        "direct_dependency_count": report.direct_dependency_count,
+        "transitive_dependency_count": report.transitive_dependency_count,
+        "unresolved_dependency_count": report.unresolved_dependency_count,
+        "leaf_package_count": report.leaf_package_count,
+        "top_packages_by_fanout": [
+            {"package_key": package_key, "count": count}
+            for package_key, count in report.top_packages_by_fanout
+        ],
+        "top_packages_by_blast_radius": [
+            {
+                "package_key": package_key,
+                "affected_count": count,
+                "affected_fraction": round(fraction, 6),
+            }
+            for package_key, count, fraction in report.top_packages_by_blast_radius
+        ],
+    }
+
+
+def _trace_result_json(result, *, include_dev: bool, max_paths: int) -> dict:
+    """Serialize a TraceResult into a stable machine-readable shape."""
+    return {
+        "meta": export_command_meta(
+            command="trace",
+            schema_version=TRACE_SCHEMA_VERSION,
+            include_dev=include_dev,
+            max_paths=max_paths,
+        ),
+        "result": {
+            "package_key": result.package_key,
+            "package_found": result.package_found,
+            "reachable_from_root": result.reachable_from_root,
+            "path_count": len(result.paths),
+            "paths": [list(path) for path in result.paths],
+        },
+    }
+
+
+def _simulate_remove_json(
+    simulation,
+    removal_report: RemovalSimulationReport,
+    *,
+    include_dev: bool,
+    requested_package_key: str,
+    resolved_package_key: str,
+) -> dict:
+    """Serialize structural removal analysis into a stable machine-readable shape."""
+    return {
+        "meta": export_command_meta(
+            command="simulate-remove",
+            schema_version=SIMULATE_REMOVE_SCHEMA_VERSION,
+            include_dev=include_dev,
+        ),
+        "result": {
+            "requested_package_key": requested_package_key,
+            "resolved_package_key": resolved_package_key,
+            "package_found": simulation.package_found,
+            "removed_keys": list(simulation.removed_keys),
+            "removed_count": simulation.removed_count,
+            "percent_removed": round(simulation.percent_removed, 6),
+            "impacted_packages": [
+                {"package_key": package_key, "lost_count": lost_count}
+                for package_key, lost_count in simulation.impacted_packages
+            ],
+            "before": _graph_report_json(removal_report.before_report),
+            "after": _graph_report_json(removal_report.after_report),
+            "disclaimer": simulation.disclaimer,
+        },
+    }
+
+
 def _format_trace_result(result) -> str:
     """Format root-to-target trace paths for terminal output."""
     if not result.package_found:
@@ -598,7 +682,15 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
         if as_json:
             proj_score = score_project(report)
             output = {
-                "project": _project_name(report),
+                "meta": export_command_meta(
+                    command="analyze",
+                    schema_version=ANALYZE_SCHEMA_VERSION,
+                    include_dev=include_dev,
+                    fanout_limit=fanout_limit,
+                ),
+                "project": {
+                    "name": _project_name(report),
+                },
                 "risk": {
                     "score": proj_score.total,
                     "label": proj_score.label,
@@ -819,13 +911,22 @@ def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open
     type=int,
     help="Max shortest paths to show (default: 3).",
 )
-def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, as_json: bool) -> None:
     """Explain why a package exists by tracing shortest root-to-target paths."""
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
         result = trace_package(graph, package_key, max_paths=max_paths)
-        click.echo(_format_trace_result(result))
+        if as_json:
+            click.echo(
+                json_mod.dumps(
+                    _trace_result_json(result, include_dev=include_dev, max_paths=max_paths),
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(_format_trace_result(result))
     except Exception as e:
         raise click.ClickException(str(e))
 
@@ -838,7 +939,8 @@ def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int) -
     default=True,
     help="Include devDependencies (default: yes).",
 )
-def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json: bool) -> None:
     """Simulate removing a package and show the impact."""
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
@@ -857,6 +959,21 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool) -> None
             raise click.ClickException(
                 f"Package '{package_key}' not found in the dependency graph."
             )
+
+        if as_json:
+            click.echo(
+                json_mod.dumps(
+                    _simulate_remove_json(
+                        simulation,
+                        result,
+                        include_dev=include_dev,
+                        requested_package_key=package_key,
+                        resolved_package_key=resolved_package_key,
+                    ),
+                    indent=2,
+                )
+            )
+            return
 
         before = result.before_report
         after = result.after_report

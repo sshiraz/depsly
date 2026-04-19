@@ -80,6 +80,45 @@ class TestTraceCli:
         assert "1. app@1.0.0 -> A@1.0.0 -> C@1.0.0" in result.output
         assert "2. " not in result.output
 
+    def test_trace_json_output(self, tmp_path):
+        lockfile = tmp_path / "package-lock.json"
+        lockfile.write_text(json.dumps(shared_lockfile()))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", str(lockfile), "C@1.0.0", "--max-paths", "1", "--json"])
+        assert result.exit_code == 0
+
+        parsed = json.loads(result.output)
+        assert parsed["meta"]["command"] == "trace"
+        assert parsed["meta"]["schema_version"] == "1.0"
+        assert parsed["meta"]["max_paths"] == 1
+        assert parsed["result"] == {
+            "package_key": "C@1.0.0",
+            "package_found": True,
+            "reachable_from_root": True,
+            "path_count": 1,
+            "paths": [["app@1.0.0", "A@1.0.0", "C@1.0.0"]],
+        }
+
+    def test_trace_json_missing_package(self, tmp_path):
+        lockfile = tmp_path / "package-lock.json"
+        lockfile.write_text(json.dumps(shared_lockfile()))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["trace", str(lockfile), "missing@0.0.0", "--json"])
+        assert result.exit_code == 0
+
+        parsed = json.loads(result.output)
+        assert parsed["meta"]["command"] == "trace"
+        assert parsed["meta"]["max_paths"] == 3
+        assert parsed["result"] == {
+            "package_key": "missing@0.0.0",
+            "package_found": False,
+            "reachable_from_root": False,
+            "path_count": 0,
+            "paths": [],
+        }
+
     def test_trace_package_not_found(self, tmp_path):
         lockfile = tmp_path / "package-lock.json"
         lockfile.write_text(json.dumps(shared_lockfile()))

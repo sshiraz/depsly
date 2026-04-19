@@ -78,6 +78,12 @@ pip install depsly
 depsly analyze package-lock.json
 ```
 
+JSON export:
+
+```bash
+depsly analyze package-lock.json --json
+```
+
 ---
 
 ### Get prioritized recommendations
@@ -100,12 +106,24 @@ depsly recommend package-lock.json --json
 depsly trace package-lock.json @babel/core@7.29.0
 ```
 
+JSON export:
+
+```bash
+depsly trace package-lock.json @babel/core@7.29.0 --json
+```
+
 ---
 
 ### Preview structural impact of removal
 
 ```bash
 depsly simulate-remove package-lock.json eslint@9.39.4
+```
+
+JSON export:
+
+```bash
+depsly simulate-remove package-lock.json eslint@9.39.4 --json
 ```
 
 ---
@@ -264,10 +282,13 @@ Early release (v0.1.8)
 
 Core features are stable:
 - analyze
+- analyze --json
 - recommend
 - recommend --json
 - trace
+- trace --json
 - simulate-remove
+- simulate-remove --json
 - save-scan
 - list-scans
 - compare-scans

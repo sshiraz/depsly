@@ -113,6 +113,44 @@ class TestSimulateRemoveCli:
         assert result.output.startswith("Simulating removal: react@18.2.0")
         assert "Resolved 'react' to 'react@18.2.0'" in result.output
 
+    def test_cli_json_output(self, tmp_path):
+        lockfile = tmp_path / "package-lock.json"
+        lockfile.write_text(json.dumps({
+            "name": "app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {
+                    "name": "app",
+                    "version": "1.0.0",
+                    "dependencies": {"react": "^18.2.0"},
+                },
+                "node_modules/react": {
+                    "version": "18.2.0",
+                },
+            },
+        }))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["simulate-remove", str(lockfile), "react", "--json"])
+        assert result.exit_code == 0
+
+        parsed = json.loads(result.output)
+        assert parsed["meta"]["command"] == "simulate-remove"
+        assert parsed["meta"]["schema_version"] == "1.0"
+        assert parsed["result"]["requested_package_key"] == "react"
+        assert parsed["result"]["resolved_package_key"] == "react@18.2.0"
+        assert parsed["result"]["package_found"] is True
+        assert parsed["result"]["removed_keys"] == ["react@18.2.0"]
+        assert parsed["result"]["removed_count"] == 1
+        assert parsed["result"]["percent_removed"] == 0.5
+        assert parsed["result"]["impacted_packages"] == [{"package_key": "app@1.0.0", "lost_count": 1}]
+        assert parsed["result"]["before"]["total_nodes"] == 2
+        assert parsed["result"]["before"]["direct_dependency_count"] == 1
+        assert parsed["result"]["after"]["total_nodes"] == 1
+        assert parsed["result"]["after"]["direct_dependency_count"] == 0
+        assert parsed["result"]["disclaimer"].startswith("Structural simulation only.")
+
     def test_cli_resolves_multiple_versions_by_direct_dependency_first(self, tmp_path):
         lockfile = tmp_path / "package-lock.json"
         lockfile.write_text(json.dumps({
