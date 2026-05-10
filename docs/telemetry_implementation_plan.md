@@ -152,8 +152,16 @@ logical backend step after that is aggregation rather than initial endpoint
 creation.
 
 That aggregation layer now exists as a local JSON-report script over the raw
-SQLite ingest store. The next step after that is scheduled execution and
+SQLite ingest store. It also now supports a concise human-readable text summary
+for quick inspection. The next step after that is scheduled execution and
 dashboard consumption.
+
+The repository now includes a report-publishing script that writes dated JSON
+and text artifacts plus stable `latest` copies, which is suitable for cron or
+other scheduled execution.
+
+It also includes a cleanup script with concrete default retention windows for
+raw events and dated report artifacts.
 
 ## Trust Safeguards
 

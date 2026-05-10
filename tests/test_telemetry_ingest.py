@@ -1,7 +1,9 @@
 """Tests for telemetry ingestion validation and persistence."""
 
 import os
+import sqlite3
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,6 +12,7 @@ from core.telemetry import sample_telemetry_event
 from core.telemetry_ingest import (
     count_stored_telemetry_events,
     init_telemetry_ingest_db,
+    prune_stored_telemetry_events,
     store_telemetry_events,
     validate_telemetry_batch,
     validate_telemetry_event,
@@ -76,3 +79,27 @@ def test_init_db_and_store_events(tmp_path):
     stored = store_telemetry_events(db_path, [valid_event(), valid_event()])
     assert stored == 2
     assert count_stored_telemetry_events(db_path) == 2
+
+
+def test_prune_stored_telemetry_events(tmp_path):
+    db_path = tmp_path / "telemetry.sqlite3"
+    store_telemetry_events(db_path, [valid_event(), valid_event()])
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "update telemetry_raw_events set received_at = ? where id = 1",
+            ("2026-03-01T00:00:00Z",),
+        )
+        conn.execute(
+            "update telemetry_raw_events set received_at = ? where id = 2",
+            ("2026-05-09T00:00:00Z",),
+        )
+        conn.commit()
+
+    deleted = prune_stored_telemetry_events(
+        db_path,
+        retain_days=30,
+        now=datetime(2026, 5, 10, tzinfo=UTC),
+    )
+    assert deleted == 1
+    assert count_stored_telemetry_events(db_path) == 1

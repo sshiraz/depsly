@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.telemetry_aggregate import build_telemetry_aggregate_report
+from core.telemetry_aggregate import (
+    build_telemetry_aggregate_report,
+    render_telemetry_text_report,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,13 +31,22 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional output JSON path. Prints to stdout when omitted.",
     )
+    parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="json",
+        help="Output format for the aggregate report (default: json).",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     report = build_telemetry_aggregate_report(args.db_path)
-    rendered = json.dumps(report, indent=2) + "\n"
+    if args.format == "text":
+        rendered = render_telemetry_text_report(report)
+    else:
+        rendered = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")

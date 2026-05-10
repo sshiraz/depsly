@@ -153,15 +153,43 @@ Current transport behavior:
 - `depsly telemetry flush` attempts to send one batch
 - failed sends leave the queue intact
 
+## Inspecting Aggregated Data
+
+Depsly includes local backend-side tooling to inspect collected telemetry after
+ingest.
+
+- `python scripts/telemetry_aggregate.py --db-path var/telemetry/telemetry.sqlite3`
+  prints the full aggregate JSON report
+- `python scripts/telemetry_aggregate.py --db-path var/telemetry/telemetry.sqlite3 --format text`
+  prints a concise human-readable summary with command share, success rates,
+  and bucket counts
+
+The text report is intended for quick operator review before a dashboard or
+scheduled reporting layer exists.
+
+For scheduled artifact generation, Depsly also includes:
+
+- `python scripts/telemetry_publish_reports.py --db-path var/telemetry/telemetry.sqlite3`
+
+That command writes both date-stamped and stable `latest` report files:
+
+- `YYYY-MM-DD-telemetry-report.json`
+- `YYYY-MM-DD-telemetry-report.txt`
+- `latest-telemetry-report.json`
+- `latest-telemetry-report.txt`
+
 ## Retention
 
-Recommended retention rules:
+Current retention defaults:
 
-- keep local unsent telemetry for a short bounded period
-- retain server-side raw events only as long as needed for aggregation
-- prefer aggregated reporting over long-lived event storage
+- local unsent CLI queue retention is bounded separately by the client queue cap
+- raw ingested telemetry events should be retained for `30` days
+- dated aggregate report artifacts should be retained for `90` days
+- stable `latest` aggregate report files are preserved during dated-artifact cleanup
 
-If exact retention windows change later, document them explicitly here.
+Depsly includes a cleanup command for the backend-side retention workflow:
+
+- `python scripts/telemetry_cleanup.py --db-path var/telemetry/telemetry.sqlite3 --output-dir var/telemetry/reports`
 
 ## User Trust Requirements
 

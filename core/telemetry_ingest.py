@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from http import HTTPStatus
 from pathlib import Path
 
@@ -249,6 +249,34 @@ def count_stored_telemetry_events(db_path: Path) -> int:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("select count(*) from telemetry_raw_events").fetchone()
     return int(row[0]) if row else 0
+
+
+def prune_stored_telemetry_events(
+    db_path: Path,
+    *,
+    retain_days: int,
+    now: datetime | None = None,
+) -> int:
+    """Delete raw telemetry events older than the retention window."""
+    if retain_days < 0:
+        raise ValueError("retain_days must be non-negative")
+    if not db_path.exists():
+        return 0
+
+    effective_now = now or datetime.now(UTC)
+    cutoff = (effective_now - timedelta(days=retain_days)).replace(microsecond=0)
+    cutoff_text = cutoff.isoformat().replace("+00:00", "Z")
+
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            delete from telemetry_raw_events
+            where received_at < ?
+            """,
+            (cutoff_text,),
+        )
+        conn.commit()
+    return int(cursor.rowcount or 0)
 
 
 def health_response(db_path: Path) -> tuple[int, dict]:

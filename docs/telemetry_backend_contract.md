@@ -7,6 +7,8 @@ The repository now includes a small reference ingestion service at:
 
 - `scripts/telemetry_ingest_server.py`
 - `scripts/telemetry_aggregate.py`
+- `scripts/telemetry_publish_reports.py`
+- `scripts/telemetry_cleanup.py`
 
 It is intentionally minimal and suitable for local development, small-scale
 deployment, and contract verification.
@@ -152,6 +154,12 @@ Recommended flow:
 3. Run scheduled aggregation jobs.
 4. Delete raw events after the retention window.
 
+Reference retention defaults:
+
+- raw ingested events: `30` days
+- dated aggregate report artifacts: `90` days
+- stable `latest` report artifacts are retained separately
+
 ## Aggregates To Produce
 
 - daily command counts
@@ -178,6 +186,7 @@ The bundled reference service:
 - stores raw events in a local SQLite database
 - exposes `GET /health` for a basic liveness check
 - includes a separate aggregation script that reads the raw SQLite store and emits daily JSON summaries
+- supports `--format text` on the aggregation script for a concise operator-facing summary
 
 Example:
 
@@ -189,4 +198,22 @@ Aggregate example:
 
 ```bash
 python scripts/telemetry_aggregate.py --db-path ./var/telemetry/telemetry.sqlite3 --output ./var/telemetry/daily-report.json
+```
+
+Human-readable summary example:
+
+```bash
+python scripts/telemetry_aggregate.py --db-path ./var/telemetry/telemetry.sqlite3 --format text
+```
+
+Scheduled artifact example:
+
+```bash
+python scripts/telemetry_publish_reports.py --db-path ./var/telemetry/telemetry.sqlite3 --output-dir ./var/telemetry/reports
+```
+
+Cleanup example:
+
+```bash
+python scripts/telemetry_cleanup.py --db-path ./var/telemetry/telemetry.sqlite3 --output-dir ./var/telemetry/reports
 ```
