@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.classify import classify_all_packages
-from core.graph import DependencyGraph, compute_dominator_subtree_sizes
+from core.graph import DependencyGraph, compute_dominator_subtree_sizes, traverse_bfs
 from core.models import Recommendation
 from core.scoring import compute_feasibility_score, compute_package_score, looks_like_tooling_package
 
@@ -21,7 +21,7 @@ def recommend_packages(
 
     classifications = classify_all_packages(graph, normalized_data=normalized_data)
     removed_counts = compute_dominator_subtree_sizes(graph)
-    total_nodes = len(graph.nodes)
+    total_reachable_nodes = len(traverse_bfs(graph))
     recommendations: list[Recommendation] = []
 
     for package_key in sorted(graph.nodes):
@@ -30,7 +30,11 @@ def recommend_packages(
             continue
 
         removed_count = removed_counts.get(package_key, 0)
-        impact_score = removed_count / total_nodes if total_nodes > 0 else 0.0
+        impact_score = (
+            removed_count / total_reachable_nodes
+            if total_reachable_nodes > 0
+            else 0.0
+        )
         feasibility_score = compute_feasibility_score(graph, package_key, classification)
         final_score = compute_package_score(
             graph,

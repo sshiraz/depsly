@@ -191,3 +191,52 @@ class TestRecommendPackages:
         recommendations = recommend_packages(graph)
         assert len(calls) == 1
         assert recommendations
+
+    def test_unreachable_nodes_do_not_dilute_impact_score(self):
+        """Structural impact should be measured against the reachable graph,
+        matching simulate-remove semantics, not all graph nodes."""
+        data = {
+            "root": "app@1",
+            "packages": {
+                "app@1": {
+                    "name": "app",
+                    "version": "1",
+                    "dependencies": ["a@1", "x@1"],
+                },
+                "a@1": {
+                    "name": "a",
+                    "version": "1",
+                    "dependencies": ["leaf@1"],
+                },
+                "x@1": {
+                    "name": "x",
+                    "version": "1",
+                    "dependencies": ["leaf@1"],
+                },
+                "leaf@1": {
+                    "name": "leaf",
+                    "version": "1",
+                    "dependencies": [],
+                },
+                "orphan-1@1": {
+                    "name": "orphan-1",
+                    "version": "1",
+                    "dependencies": [],
+                },
+                "orphan-2@1": {
+                    "name": "orphan-2",
+                    "version": "1",
+                    "dependencies": [],
+                },
+                "orphan-3@1": {
+                    "name": "orphan-3",
+                    "version": "1",
+                    "dependencies": [],
+                },
+            },
+        }
+
+        recommendations = recommend_packages(build_graph(data), normalized_data=data)
+        by_key = {r.package_key: r for r in recommendations}
+        assert by_key["leaf@1"].impact_score == 0.25
+        assert by_key["leaf@1"].recommendation_type == "TRACE_UPSTREAM"
