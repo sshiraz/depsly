@@ -240,6 +240,12 @@ def compute_dominator_subtree_sizes(graph: DependencyGraph) -> dict[str, int]:
     if root_key is None or root_key not in graph.nodes:
         return {}
 
+    # Step 1: postorder DFS from root. The CHK algorithm depends on
+    # processing nodes in *reverse* postorder so that, by the time we
+    # examine a node, most of its predecessors already have a tentative
+    # idom — that's what makes convergence near-linear in practice.
+    # Cycle-safe: on_stack guards against revisiting active ancestors,
+    # which matters because dependency graphs can contain cycles.
     postorder: list[str] = []
     visited: set[str] = set()
     on_stack: set[str] = {root_key}
@@ -265,18 +271,29 @@ def compute_dominator_subtree_sizes(graph: DependencyGraph) -> dict[str, int]:
             on_stack.discard(key)
             stack.pop()
 
+    # Postorder index doubles as the comparison key inside `intersect`:
+    # a node closer to root has a higher postorder number, so walking up
+    # via idom always moves to a strictly higher number.
     po: dict[str, int] = {key: i for i, key in enumerate(postorder)}
 
+    # Predecessor map restricted to the reachable subgraph. Anything
+    # unreachable from root has no defined dominator.
     preds: dict[str, list[str]] = {key: [] for key in visited}
     for key in visited:
         for child in graph.nodes[key].dependencies:
             if child.key in visited:
                 preds[child.key].append(key)
 
+    # Step 2: iterative dominator computation. idom[v] = v's immediate
+    # dominator. Root dominates itself by convention; every other node
+    # starts undefined and converges as predecessors get tentative values.
     idom: dict[str, str | None] = {key: None for key in visited}
     idom[root_key] = root_key
 
     def intersect(b1: str, b2: str) -> str:
+        # Walk both fingers up the partially-built dom tree until they
+        # meet. The lower postorder number is "deeper," so always advance
+        # whichever finger has the lower number — guarantees termination.
         f1, f2 = b1, b2
         while f1 != f2:
             while po[f1] < po[f2]:
@@ -303,6 +320,10 @@ def compute_dominator_subtree_sizes(graph: DependencyGraph) -> dict[str, int]:
                 idom[key] = new_idom
                 changed = True
 
+    # Step 3: invert idom into a child list to materialize the dominator
+    # tree, then sum subtree sizes via post-order on that tree. Sizes
+    # roll up from leaves so each parent's size already includes every
+    # descendant by the time we process it.
     children: dict[str, list[str]] = {key: [] for key in visited}
     for key in visited:
         if key != root_key and idom[key] is not None:

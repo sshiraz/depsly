@@ -21,3 +21,6 @@ include = ["core*"]
 
 [tool.setuptools]
 py-modules = ["cli"]
+
+[tool.setuptools.package-data]
+core = ["data/*.json"]

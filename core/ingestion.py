@@ -72,7 +72,10 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
     if "" not in packages:
         raise IngestionError("Lockfile has no root entry (empty string key in packages)")
 
-    # Pass 1: assign a name@version key to every path entry.
+    # Two passes are needed because dependency resolution (pass 2) has to
+    # know every path that exists before any single dep can be resolved —
+    # the lookup walks up the tree and may land on a path declared later
+    # in the dict than the one currently being processed.
     path_to_key: dict[str, str] = {}
     root_key: str | None = None
     root_dev_dependency_names: set[str] = set()
@@ -88,9 +91,11 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
             root_key = key
             root_dev_dependency_names = set(info.get("devDependencies", {}))
 
-    # Pass 2: build one normalized entry per unique key. When a key is
-    # installed at multiple paths (rare but legal — e.g. when npm dedupes),
-    # union edges from each occurrence.
+    # Build one normalized entry per unique name@version. The graph layer
+    # treats nodes as logical packages, not install sites — collapsing
+    # repeated installs of the same name@version preserves correct graph
+    # semantics. install_paths (populated below) keeps the per-path list
+    # so callers can still reason about npm hoisting quality.
     normalized: dict[str, dict] = {}
 
     for path, info in packages.items():
@@ -164,12 +169,19 @@ def _resolve_dep_path(
     Workspace-style entries with `link: true` are followed once via
     their `resolved` field to the canonical entry.
     """
+    # Mirrors the runtime Node.js resolution rule: a package at path P
+    # sees deps in P/node_modules first, then in any ancestor's
+    # node_modules, then at the top level. Inner installs shadow outer
+    # ones, which is how npm supports a single project depending on two
+    # versions of the same package without a conflict.
     search_prefixes: list[str] = [dependent_path]
     current = dependent_path
     marker = "/node_modules/"
     while current:
         idx = current.rfind(marker)
         if idx == -1:
+            # Non-node_modules path (e.g. a workspace at "packages/foo").
+            # Resolution still falls back to the top-level node_modules.
             if current != "":
                 search_prefixes.append("")
             break
@@ -185,6 +197,9 @@ def _resolve_dep_path(
         if candidate not in packages:
             continue
         entry = packages[candidate]
+        # Workspaces appear in node_modules as link entries pointing at
+        # their real source path. Follow the link so the graph node is
+        # the actual workspace package, not an empty stub.
         if entry.get("link") and isinstance(entry.get("resolved"), str):
             target = entry["resolved"]
             if target in packages:

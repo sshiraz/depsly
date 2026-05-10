@@ -1,0 +1,15 @@
+{
+  "description": "Substrings that flag a package as build/dev tooling rather than runtime code. Matched case-insensitively as substrings against the package_key (name@version). Used by the recommendation engine to soften REMOVE suggestions for packages whose presence is structural to a typical JS toolchain. Update this list as the JS ecosystem evolves without redeploying code.",
+  "keywords": [
+    "eslint",
+    "typescript",
+    "vite",
+    "webpack",
+    "babel",
+    "jest",
+    "rollup",
+    "prettier",
+    "ts-node",
+    "@types/"
+  ]
+}

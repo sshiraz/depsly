@@ -1,12 +1,15 @@
 """Score computation from structural graph metrics and package facts.
 
-Pure policy module — no I/O, no LLM, no external calls.
+Pure policy module — no LLM, no external calls. The only I/O is reading
+the tooling-keyword list at import time (see _TOOLING_KEYWORDS below).
 All thresholds and point assignments live here.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from core.analyze import GraphReport
 from core.graph import DependencyGraph
@@ -15,18 +18,19 @@ from core.simulate import simulate_remove
 
 PACKAGE_SCORING_VERSION = "v1"
 
-_TOOLING_KEYWORDS = (
-    "eslint",
-    "typescript",
-    "vite",
-    "webpack",
-    "babel",
-    "jest",
-    "rollup",
-    "prettier",
-    "ts-node",
-    "@types/",
-)
+
+def _load_tooling_keywords() -> tuple[str, ...]:
+    # Loaded from a data file rather than hardcoded so the JS ecosystem
+    # heuristic can evolve (new build tools, deprecated ones) without a
+    # code change — useful for users who pip install depsly and want to
+    # tweak the list locally. Read once at import; the result is frozen
+    # for the life of the process.
+    path = Path(__file__).parent / "data" / "tooling_keywords.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return tuple(data["keywords"])
+
+
+_TOOLING_KEYWORDS = _load_tooling_keywords()
 
 
 @dataclass
