@@ -10,6 +10,7 @@ from core.graph import (
     build_reverse_edges,
     build_graph,
     collect_transitive_deps,
+    compute_dominator_subtree_sizes,
     graph_stats,
     has_cycle,
     max_depth,
@@ -425,3 +426,91 @@ class TestSimulateRemove:
         c = sim.nodes["C@1.0.0"]
         dependent_keys = {d.key for d in c.dependents}
         assert dependent_keys == {"A@1.0.0", "B@1.0.0"}
+
+
+class TestComputeDominatorSubtreeSizes:
+    """Each size should equal simulate_remove_package's removed_count."""
+
+    def test_chain(self):
+        """app -> a -> b -> c: removing a removes {a,b,c}, b removes {b,c}, c removes {c}."""
+        data = {
+            "root": "app@1",
+            "packages": {
+                "app@1": {"name": "app", "version": "1", "dependencies": ["a@1"]},
+                "a@1": {"name": "a", "version": "1", "dependencies": ["b@1"]},
+                "b@1": {"name": "b", "version": "1", "dependencies": ["c@1"]},
+                "c@1": {"name": "c", "version": "1", "dependencies": []},
+            },
+        }
+        sizes = compute_dominator_subtree_sizes(build_graph(data))
+        assert sizes["a@1"] == 3
+        assert sizes["b@1"] == 2
+        assert sizes["c@1"] == 1
+
+    def test_shared_dep_not_dominated(self):
+        """app -> A -> shared, app -> B -> shared. Removing A leaves shared reachable."""
+        data = {
+            "root": "app@1",
+            "packages": {
+                "app@1": {"name": "app", "version": "1", "dependencies": ["A@1", "B@1"]},
+                "A@1": {"name": "A", "version": "1", "dependencies": ["shared@1"]},
+                "B@1": {"name": "B", "version": "1", "dependencies": ["shared@1"]},
+                "shared@1": {"name": "shared", "version": "1", "dependencies": []},
+            },
+        }
+        sizes = compute_dominator_subtree_sizes(build_graph(data))
+        assert sizes["A@1"] == 1
+        assert sizes["B@1"] == 1
+        assert sizes["shared@1"] == 1
+
+    def test_root_dominates_everything(self):
+        data = {
+            "root": "app@1",
+            "packages": {
+                "app@1": {"name": "app", "version": "1", "dependencies": ["a@1"]},
+                "a@1": {"name": "a", "version": "1", "dependencies": []},
+            },
+        }
+        sizes = compute_dominator_subtree_sizes(build_graph(data))
+        assert sizes["app@1"] == 2
+
+    def test_no_root(self):
+        g = build_graph({"root": None, "packages": {}})
+        assert compute_dominator_subtree_sizes(g) == {}
+
+    def test_cycle_safe(self):
+        """a -> b -> c -> a: starting from app -> a, dom sizes should not loop."""
+        data = {
+            "root": "app@1",
+            "packages": {
+                "app@1": {"name": "app", "version": "1", "dependencies": ["a@1"]},
+                "a@1": {"name": "a", "version": "1", "dependencies": ["b@1"]},
+                "b@1": {"name": "b", "version": "1", "dependencies": ["c@1"]},
+                "c@1": {"name": "c", "version": "1", "dependencies": ["a@1"]},
+            },
+        }
+        sizes = compute_dominator_subtree_sizes(build_graph(data))
+        # All of a, b, c are dominated by a (only path from root passes through a)
+        assert sizes["a@1"] == 3
+        assert sizes["b@1"] == 2
+        assert sizes["c@1"] == 1
+
+    def test_matches_simulate_remove_on_real_lockfile(self):
+        """Cross-check on a non-trivial real graph."""
+        from pathlib import Path
+        from core.ingestion import parse_package_lock
+        from core.simulate import simulate_remove
+
+        lock = Path(__file__).parent.parent / "frontend" / "package-lock.json"
+        if not lock.exists():
+            pytest.skip("frontend lockfile fixture not available")
+        g = build_graph(parse_package_lock(lock))
+        sizes = compute_dominator_subtree_sizes(g)
+        before = set(traverse_bfs(g))
+        # Spot-check 10 nodes
+        sample = sorted(g.nodes)[:10]
+        for key in sample:
+            if key == g.root_key: continue
+            sim = simulate_remove(g, key, before_keys=before)
+            assert sizes[key] == sim.removed_count, f"mismatch on {key}"
+

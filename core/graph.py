@@ -224,6 +224,111 @@ def parent_counts(graph: DependencyGraph) -> dict[str, int]:
     return {key: len(parents) for key, parents in reverse_edges.items()}
 
 
+def compute_dominator_subtree_sizes(graph: DependencyGraph) -> dict[str, int]:
+    """For each reachable node, return |dominator subtree| including the node.
+
+    Equivalent to: for each node v reachable from root, the count of nodes
+    (including v itself) that would become unreachable from root if v were
+    removed. Matches simulate_remove(...).removed_count for every reachable
+    non-root node, computed in a single pass instead of one per node.
+
+    Algorithm: Cooper, Harvey, Kennedy "A Simple, Fast Dominance Algorithm"
+    (2001). Near-linear in V+E in practice; O(V*(V+E)) worst case on
+    adversarial graphs.
+    """
+    root_key = graph.root_key
+    if root_key is None or root_key not in graph.nodes:
+        return {}
+
+    postorder: list[str] = []
+    visited: set[str] = set()
+    on_stack: set[str] = {root_key}
+    stack: list[tuple[str, list, int]] = [
+        (root_key, list(graph.nodes[root_key].dependencies), 0)
+    ]
+    while stack:
+        key, deps, i = stack[-1]
+        advanced = False
+        while i < len(deps):
+            child_key = deps[i].key
+            i += 1
+            if child_key not in visited and child_key not in on_stack:
+                stack[-1] = (key, deps, i)
+                on_stack.add(child_key)
+                stack.append((child_key, list(graph.nodes[child_key].dependencies), 0))
+                advanced = True
+                break
+        if not advanced:
+            stack[-1] = (key, deps, i)
+            postorder.append(key)
+            visited.add(key)
+            on_stack.discard(key)
+            stack.pop()
+
+    po: dict[str, int] = {key: i for i, key in enumerate(postorder)}
+
+    preds: dict[str, list[str]] = {key: [] for key in visited}
+    for key in visited:
+        for child in graph.nodes[key].dependencies:
+            if child.key in visited:
+                preds[child.key].append(key)
+
+    idom: dict[str, str | None] = {key: None for key in visited}
+    idom[root_key] = root_key
+
+    def intersect(b1: str, b2: str) -> str:
+        f1, f2 = b1, b2
+        while f1 != f2:
+            while po[f1] < po[f2]:
+                f1 = idom[f1]  # type: ignore[assignment]
+            while po[f2] < po[f1]:
+                f2 = idom[f2]  # type: ignore[assignment]
+        return f1
+
+    process_order = [k for k in reversed(postorder) if k != root_key]
+
+    changed = True
+    while changed:
+        changed = False
+        for key in process_order:
+            new_idom: str | None = None
+            for p in preds[key]:
+                if idom[p] is None:
+                    continue
+                if new_idom is None:
+                    new_idom = p
+                else:
+                    new_idom = intersect(p, new_idom)
+            if new_idom is not None and idom[key] != new_idom:
+                idom[key] = new_idom
+                changed = True
+
+    children: dict[str, list[str]] = {key: [] for key in visited}
+    for key in visited:
+        if key != root_key and idom[key] is not None:
+            children[idom[key]].append(key)  # type: ignore[index]
+
+    sizes: dict[str, int] = {key: 1 for key in visited}
+    dt_stack: list[tuple[str, list[str], int]] = [
+        (root_key, children[root_key], 0)
+    ]
+    dom_post: list[str] = []
+    while dt_stack:
+        node, ch, i = dt_stack[-1]
+        if i < len(ch):
+            dt_stack[-1] = (node, ch, i + 1)
+            dt_stack.append((ch[i], children[ch[i]], 0))
+        else:
+            dom_post.append(node)
+            dt_stack.pop()
+
+    for key in dom_post:
+        for c in children[key]:
+            sizes[key] += sizes[c]
+
+    return sizes
+
+
 def shortest_depths_from_root(graph: DependencyGraph) -> dict[str, int]:
     """Return shortest depth from root to each reachable node.
 
