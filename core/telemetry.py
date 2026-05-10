@@ -9,9 +9,13 @@ import sys
 import uuid
 from pathlib import Path
 from time import perf_counter
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from core.export import TOOL_VERSION, scan_timestamp
 from core.storage import depsly_home
+
+DEFAULT_TELEMETRY_URL = "https://telemetry.depsly.com/v1/telemetry/events"
 
 
 def telemetry_dir() -> Path:
@@ -246,3 +250,150 @@ def sample_telemetry_event() -> dict:
             "graph_size_bucket": "201-1000",
         },
     }
+
+
+def telemetry_endpoint() -> str | None:
+    """Return the resolved telemetry ingestion endpoint."""
+    value = os.environ.get("DEPSLY_TELEMETRY_URL", "").strip()
+    return value or DEFAULT_TELEMETRY_URL
+
+
+def telemetry_batch_size() -> int:
+    """Return the maximum number of events to send in one batch."""
+    raw = os.environ.get("DEPSLY_TELEMETRY_BATCH_SIZE", "50").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 50
+    return max(1, min(value, 100))
+
+
+def telemetry_timeout_seconds() -> float:
+    """Return the telemetry upload timeout in seconds."""
+    raw = os.environ.get("DEPSLY_TELEMETRY_TIMEOUT_SECONDS", "2.0").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 2.0
+    return max(0.1, min(value, 10.0))
+
+
+def telemetry_auto_flush_threshold() -> int:
+    """Return the queue size that triggers best-effort automatic flush."""
+    raw = os.environ.get("DEPSLY_TELEMETRY_AUTO_FLUSH_THRESHOLD", "20").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 20
+    return max(1, min(value, 1000))
+
+
+def build_telemetry_batch_payload(events: list[dict]) -> dict:
+    """Wrap queued telemetry events in the batch envelope sent to the server."""
+    return {
+        "schema_version": "1",
+        "sent_at": scan_timestamp(),
+        "events": events,
+    }
+
+
+def queued_telemetry_event_count() -> int:
+    """Return the number of queued local telemetry events."""
+    return len(load_queued_telemetry_events())
+
+
+def should_auto_flush_telemetry() -> bool:
+    """Return whether the current queue size should trigger automatic flush."""
+    return queued_telemetry_event_count() >= telemetry_auto_flush_threshold()
+
+
+def _write_queued_telemetry_events(events: list[dict]) -> Path:
+    """Rewrite the queue file with the provided remaining events."""
+    path = telemetry_queue_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not events:
+        if path.exists():
+            path.unlink()
+        return path
+    with path.open("w", encoding="utf-8") as handle:
+        for event in events:
+            handle.write(json.dumps(event, sort_keys=True) + "\n")
+    return path
+
+
+def _post_telemetry_batch(*, url: str, payload: dict, timeout_seconds: float) -> dict:
+    """Send one telemetry batch via HTTPS and return the decoded JSON response."""
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib_request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": f"depsly/{TOOL_VERSION}",
+        },
+        method="POST",
+    )
+    with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+        body = response.read().decode("utf-8").strip()
+    if not body:
+        return {}
+    return json.loads(body)
+
+
+def flush_queued_telemetry_events() -> dict:
+    """Send one batch of queued telemetry events if transport is configured."""
+    endpoint = telemetry_endpoint()
+    if endpoint is None:
+        return {
+            "attempted": False,
+            "sent": 0,
+            "remaining": queued_telemetry_event_count(),
+            "reason": "not_configured",
+        }
+
+    queued = load_queued_telemetry_events()
+    if not queued:
+        return {
+            "attempted": False,
+            "sent": 0,
+            "remaining": 0,
+            "reason": "empty_queue",
+        }
+
+    batch_size = telemetry_batch_size()
+    batch = queued[:batch_size]
+    payload = build_telemetry_batch_payload(batch)
+    try:
+        _post_telemetry_batch(
+            url=endpoint,
+            payload=payload,
+            timeout_seconds=telemetry_timeout_seconds(),
+        )
+    except (urllib_error.URLError, TimeoutError, json.JSONDecodeError):
+        return {
+            "attempted": True,
+            "sent": 0,
+            "remaining": len(queued),
+            "reason": "send_failed",
+        }
+
+    remaining_events = queued[len(batch):]
+    _write_queued_telemetry_events(remaining_events)
+    return {
+        "attempted": True,
+        "sent": len(batch),
+        "remaining": len(remaining_events),
+        "reason": "sent",
+    }
+
+
+def maybe_auto_flush_telemetry() -> dict:
+    """Best-effort automatic flush when the queue reaches the configured threshold."""
+    if not should_auto_flush_telemetry():
+        return {
+            "attempted": False,
+            "sent": 0,
+            "remaining": queued_telemetry_event_count(),
+            "reason": "below_threshold",
+        }
+    return flush_queued_telemetry_events()

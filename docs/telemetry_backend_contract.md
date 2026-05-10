@@ -3,6 +3,14 @@
 This document defines the minimal backend contract for Depsly telemetry
 ingestion once remote collection is enabled.
 
+The repository now includes a small reference ingestion service at:
+
+- `scripts/telemetry_ingest_server.py`
+- `scripts/telemetry_aggregate.py`
+
+It is intentionally minimal and suitable for local development, small-scale
+deployment, and contract verification.
+
 ## Goal
 
 Accept small batches of anonymous command-level telemetry events over HTTPS,
@@ -11,6 +19,10 @@ validate them, store them briefly, and make aggregate reporting possible.
 ## Endpoint
 
 `POST /v1/telemetry/events`
+
+The phase 2 CLI queues locally first, then attempts best-effort automatic
+delivery once the queue reaches a threshold. `depsly telemetry flush` remains
+available for manual control and verification.
 
 ## Request Headers
 
@@ -156,3 +168,25 @@ Recommended flow:
 - per-project analytics
 - cross-repo analysis
 - real-time dashboards
+
+## Reference Service
+
+The bundled reference service:
+
+- uses Python's standard library HTTP server
+- validates request payloads against the documented telemetry shape
+- stores raw events in a local SQLite database
+- exposes `GET /health` for a basic liveness check
+- includes a separate aggregation script that reads the raw SQLite store and emits daily JSON summaries
+
+Example:
+
+```bash
+python scripts/telemetry_ingest_server.py --host 127.0.0.1 --port 8787
+```
+
+Aggregate example:
+
+```bash
+python scripts/telemetry_aggregate.py --db-path ./var/telemetry/telemetry.sqlite3 --output ./var/telemetry/daily-report.json
+```

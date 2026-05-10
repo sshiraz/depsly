@@ -29,10 +29,14 @@ from core.storage import save_scan_export
 from core.storage import compare_scan_exports, list_saved_scans, load_scan_export
 from core.telemetry import (
     build_telemetry_event,
+    flush_queued_telemetry_events,
+    maybe_auto_flush_telemetry,
     delete_local_telemetry_data,
     disable_telemetry,
     enable_telemetry,
     failure_category_for_exception,
+    queued_telemetry_event_count,
+    telemetry_endpoint,
     queue_telemetry_event,
     sample_telemetry_event,
     telemetry_enabled,
@@ -65,6 +69,7 @@ def _record_telemetry(
         failure_category=failure_category,
     )
     queue_telemetry_event(event)
+    maybe_auto_flush_telemetry()
 
 
 def _project_name(report: GraphReport) -> str:
@@ -718,10 +723,15 @@ def telemetry_group() -> None:
 @telemetry_group.command("status")
 def telemetry_status() -> None:
     """Show current telemetry status and collection boundaries."""
+    queue_count = queued_telemetry_event_count()
+    endpoint = telemetry_endpoint()
     if telemetry_enabled():
         click.echo("Telemetry: enabled")
         click.echo("")
         click.echo("Depsly is sending anonymous command-level usage data to help improve the product.")
+        click.echo("")
+        click.echo(f"Queued local events: {queue_count}")
+        click.echo(f"Upload endpoint: {endpoint or 'not configured'}")
         click.echo("")
         click.echo("Never collected: lockfile contents, dependency graph, package names,")
         click.echo("file paths, and command output.")
@@ -729,6 +739,9 @@ def telemetry_status() -> None:
         click.echo("Telemetry: disabled")
         click.echo("")
         click.echo("Depsly is not sending telemetry.")
+        click.echo("")
+        click.echo(f"Queued local events: {queue_count}")
+        click.echo(f"Upload endpoint: {endpoint or 'not configured'}")
         click.echo("")
         click.echo("Enable at any time with:")
         click.echo("  depsly telemetry enable")
@@ -771,6 +784,31 @@ def telemetry_delete_data() -> None:
     click.echo("")
     click.echo("Any queued unsent telemetry events stored by Depsly on this machine have been")
     click.echo("removed.")
+
+
+@telemetry_group.command("flush")
+def telemetry_flush() -> None:
+    """Attempt to send one batch of queued telemetry events."""
+    result = flush_queued_telemetry_events()
+    reason = result["reason"]
+    if reason == "not_configured":
+        click.echo("Telemetry flush skipped: no upload endpoint configured.")
+        click.echo("")
+        click.echo("Set DEPSLY_TELEMETRY_URL to enable batch upload.")
+        return
+    if reason == "empty_queue":
+        click.echo("Telemetry queue is empty.")
+        return
+    if reason == "send_failed":
+        click.echo("Telemetry flush failed.")
+        click.echo("")
+        click.echo(f"Queued local events remain: {result['remaining']}")
+        return
+
+    click.echo("Telemetry flush complete.")
+    click.echo("")
+    click.echo(f"Events sent: {result['sent']}")
+    click.echo(f"Events remaining: {result['remaining']}")
 
 
 @cli.command()

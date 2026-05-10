@@ -18,6 +18,7 @@ Commands:
   depsly telemetry enable
   depsly telemetry disable
   depsly telemetry status
+  depsly telemetry flush
 ```
 
 ## Enable Confirmation

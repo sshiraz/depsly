@@ -4,25 +4,35 @@ import json
 import os
 import sys
 from time import perf_counter
+from urllib import error as urllib_error
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.telemetry import (
+    DEFAULT_TELEMETRY_URL,
     build_telemetry_event,
+    build_telemetry_batch_payload,
     default_telemetry_config,
     delete_local_telemetry_data,
     disable_telemetry,
     duration_bucket,
     enable_telemetry,
     failure_category_for_exception,
+    flush_queued_telemetry_events,
     graph_size_bucket,
     load_queued_telemetry_events,
     load_telemetry_config,
     queue_telemetry_event,
+    queued_telemetry_event_count,
     sample_telemetry_event,
+    should_auto_flush_telemetry,
+    telemetry_auto_flush_threshold,
+    telemetry_batch_size,
     telemetry_config_path,
+    telemetry_endpoint,
     telemetry_enabled,
     telemetry_queue_path,
+    telemetry_timeout_seconds,
 )
 
 
@@ -153,3 +163,82 @@ def test_failure_category_mapping():
     assert failure_category_for_exception(FileNotFoundError("File not found: nope")) == "missing_file"
     assert failure_category_for_exception(ValueError("cannot parse input")) == "parse_error"
     assert failure_category_for_exception(RuntimeError("boom")) == "internal_error"
+
+
+def test_transport_config_from_environment(monkeypatch):
+    monkeypatch.setenv("DEPSLY_TELEMETRY_URL", "https://example.test/v1/telemetry/events")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_BATCH_SIZE", "25")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_TIMEOUT_SECONDS", "1.5")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_AUTO_FLUSH_THRESHOLD", "7")
+
+    assert telemetry_endpoint() == "https://example.test/v1/telemetry/events"
+    assert telemetry_batch_size() == 25
+    assert telemetry_timeout_seconds() == 1.5
+    assert telemetry_auto_flush_threshold() == 7
+
+
+def test_default_endpoint_is_present(monkeypatch):
+    monkeypatch.delenv("DEPSLY_TELEMETRY_URL", raising=False)
+    assert telemetry_endpoint() == DEFAULT_TELEMETRY_URL
+
+
+def test_batch_payload_wraps_events():
+    payload = build_telemetry_batch_payload([sample_telemetry_event()])
+    assert payload["schema_version"] == "1"
+    assert len(payload["events"]) == 1
+    assert payload["events"][0]["event"] == "cli.command.completed"
+
+
+def test_auto_flush_threshold_logic(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEPSLY_HOME", str(tmp_path / "depsly-home"))
+    monkeypatch.setenv("DEPSLY_TELEMETRY_AUTO_FLUSH_THRESHOLD", "2")
+    enable_telemetry()
+    queue_telemetry_event(sample_telemetry_event())
+
+    assert should_auto_flush_telemetry() is False
+    queue_telemetry_event(sample_telemetry_event())
+    assert should_auto_flush_telemetry() is True
+
+
+def test_flush_succeeds_and_prunes_sent_events(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEPSLY_HOME", str(tmp_path / "depsly-home"))
+    monkeypatch.setenv("DEPSLY_TELEMETRY_URL", "https://example.test/v1/telemetry/events")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_BATCH_SIZE", "2")
+    enable_telemetry()
+    queue_telemetry_event(sample_telemetry_event())
+    queue_telemetry_event(sample_telemetry_event())
+    queue_telemetry_event(sample_telemetry_event())
+
+    def fake_post(**kwargs):
+        assert kwargs["url"] == "https://example.test/v1/telemetry/events"
+        assert len(kwargs["payload"]["events"]) == 2
+        return {"accepted": 2, "rejected": 0}
+
+    monkeypatch.setattr("core.telemetry._post_telemetry_batch", fake_post)
+
+    result = flush_queued_telemetry_events()
+
+    assert result["attempted"] is True
+    assert result["sent"] == 2
+    assert result["remaining"] == 1
+    assert queued_telemetry_event_count() == 1
+
+
+def test_flush_failure_keeps_queue(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEPSLY_HOME", str(tmp_path / "depsly-home"))
+    monkeypatch.setenv("DEPSLY_TELEMETRY_URL", "https://example.test/v1/telemetry/events")
+    enable_telemetry()
+    queue_telemetry_event(sample_telemetry_event())
+
+    def fake_post(**kwargs):
+        raise urllib_error.URLError("offline")
+
+    monkeypatch.setattr("core.telemetry._post_telemetry_batch", fake_post)
+
+    result = flush_queued_telemetry_events()
+
+    assert result["attempted"] is True
+    assert result["sent"] == 0
+    assert result["reason"] == "send_failed"
+    assert result["remaining"] == 1
+    assert queued_telemetry_event_count() == 1

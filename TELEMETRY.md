@@ -38,11 +38,19 @@ Recommended user controls:
 - `depsly telemetry enable`
 - `depsly telemetry disable`
 - `depsly telemetry show-sample`
+- `depsly telemetry flush`
 - `depsly telemetry delete-data`
 
 Recommended environment override:
 
 - `DEPSLY_TELEMETRY=0` disables telemetry regardless of saved local settings
+
+Optional transport configuration:
+
+- `DEPSLY_TELEMETRY_URL` overrides the built-in HTTPS ingestion endpoint
+- `DEPSLY_TELEMETRY_BATCH_SIZE` sets the maximum events per flush batch
+- `DEPSLY_TELEMETRY_TIMEOUT_SECONDS` sets the upload timeout
+- `DEPSLY_TELEMETRY_AUTO_FLUSH_THRESHOLD` sets the queued-event threshold for best-effort automatic flush
 
 ## What We Collect
 
@@ -130,11 +138,20 @@ Recommended approach:
 
 - record events locally first
 - queue them on disk under the Depsly home directory
-- send them in small batches
+- send them in small batches when explicitly flushed
 - retry quietly
 - cap queue size and discard oldest pending events if necessary
 
 The CLI should continue to work normally if telemetry delivery fails.
+
+Current transport behavior:
+
+- events are always queued locally first
+- Depsly includes a built-in telemetry endpoint for normal opt-in usage
+- `DEPSLY_TELEMETRY_URL` exists for development or override scenarios
+- best-effort remote delivery happens automatically once the queue reaches a threshold
+- `depsly telemetry flush` attempts to send one batch
+- failed sends leave the queue intact
 
 ## Retention
 

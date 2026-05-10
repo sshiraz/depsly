@@ -28,6 +28,7 @@ Add a `telemetry` command group:
 - `depsly telemetry enable`
 - `depsly telemetry disable`
 - `depsly telemetry show-sample`
+- `depsly telemetry flush`
 - `depsly telemetry delete-data`
 
 Optional later:
@@ -114,8 +115,13 @@ Requirements:
 - tolerate offline environments
 - silently no-op when disabled
 
-If telemetry transport is not available yet, phase 1 can stop at local queueing
-and sample inspection.
+Phase 2 transport can remain explicit and operator-driven:
+
+- queue locally during normal command execution
+- include a built-in endpoint so user opt-in does not require manual endpoint setup
+- attempt best-effort flush automatically once queue size reaches a threshold
+- keep `depsly telemetry flush` for manual control and verification
+- keep the queue intact on send failure
 
 ## Phased Rollout
 
@@ -130,13 +136,24 @@ and sample inspection.
 
 - instrument core commands
 - add batch upload transport
-- add queue pruning and retry logic
+- add built-in default endpoint with env override
+- add manual queue flush
+- add best-effort threshold-based auto flush
+- add queue pruning on successful send
 
 ### Phase 3
 
 - add basic aggregate reporting on the server side
 - publish exact retention windows
 - review whether any field should be removed or tightened
+
+The repository now includes a minimal ingestion reference service, so the next
+logical backend step after that is aggregation rather than initial endpoint
+creation.
+
+That aggregation layer now exists as a local JSON-report script over the raw
+SQLite ingest store. The next step after that is scheduled execution and
+dashboard consumption.
 
 ## Trust Safeguards
 
