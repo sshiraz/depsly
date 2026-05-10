@@ -170,6 +170,7 @@ scheduled reporting layer exists.
 For scheduled artifact generation, Depsly also includes:
 
 - `python scripts/telemetry_publish_reports.py --db-path var/telemetry/telemetry.sqlite3`
+- `python scripts/telemetry_maintenance.py --db-path var/telemetry/telemetry.sqlite3 --output-dir var/telemetry/reports`
 
 That command writes both date-stamped and stable `latest` report files:
 
@@ -177,6 +178,8 @@ That command writes both date-stamped and stable `latest` report files:
 - `YYYY-MM-DD-telemetry-report.txt`
 - `latest-telemetry-report.json`
 - `latest-telemetry-report.txt`
+
+For deployment and operations guidance, see [docs/telemetry_deployment.md](/Users/sabrishiraz/Projects/depsly/docs/telemetry_deployment.md:1).
 
 ## Retention
 

@@ -9,6 +9,7 @@ The repository now includes a small reference ingestion service at:
 - `scripts/telemetry_aggregate.py`
 - `scripts/telemetry_publish_reports.py`
 - `scripts/telemetry_cleanup.py`
+- `scripts/telemetry_maintenance.py`
 
 It is intentionally minimal and suitable for local development, small-scale
 deployment, and contract verification.
@@ -216,4 +217,10 @@ Cleanup example:
 
 ```bash
 python scripts/telemetry_cleanup.py --db-path ./var/telemetry/telemetry.sqlite3 --output-dir ./var/telemetry/reports
+```
+
+Combined maintenance example:
+
+```bash
+python scripts/telemetry_maintenance.py --db-path ./var/telemetry/telemetry.sqlite3 --output-dir ./var/telemetry/reports
 ```

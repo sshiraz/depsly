@@ -15,7 +15,7 @@ from urllib import request as urllib_request
 from core.export import TOOL_VERSION, scan_timestamp
 from core.storage import depsly_home
 
-DEFAULT_TELEMETRY_URL = "https://telemetry.depsly.com/v1/telemetry/events"
+DEFAULT_TELEMETRY_URL = "https://telemetry.depsly.io/v1/telemetry/events"
 
 
 def telemetry_dir() -> Path:

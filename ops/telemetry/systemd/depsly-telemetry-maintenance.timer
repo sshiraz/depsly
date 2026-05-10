@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Depsly telemetry maintenance daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=depsly-telemetry-maintenance.service
+
+[Install]
+WantedBy=timers.target

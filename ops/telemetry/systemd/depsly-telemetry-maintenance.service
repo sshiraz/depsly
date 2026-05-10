@@ -1,0 +1,8 @@
+[Unit]
+Description=Depsly telemetry maintenance job
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/depsly
+EnvironmentFile=/etc/depsly-telemetry.env
+ExecStart=/usr/bin/python3 /opt/depsly/scripts/telemetry_maintenance.py --db-path ${DEPSLY_TELEMETRY_INGEST_DB_PATH} --output-dir ${DEPSLY_TELEMETRY_REPORT_DIR} --raw-retain-days ${DEPSLY_TELEMETRY_RAW_RETAIN_DAYS} --report-retain-days ${DEPSLY_TELEMETRY_REPORT_RETAIN_DAYS}

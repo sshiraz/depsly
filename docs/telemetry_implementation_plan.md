@@ -163,6 +163,9 @@ other scheduled execution.
 It also includes a cleanup script with concrete default retention windows for
 raw events and dated report artifacts.
 
+Deployment assets now exist for both container and systemd-style operation, so
+the remaining work is actual environment provisioning and live smoke testing.
+
 ## Trust Safeguards
 
 - telemetry remains off until explicitly enabled

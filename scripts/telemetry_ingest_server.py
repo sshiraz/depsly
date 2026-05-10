@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,12 +25,26 @@ from core.telemetry_ingest import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Depsly telemetry ingestion service.")
-    parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind.")
-    parser.add_argument("--port", type=int, default=8787, help="Port to listen on.")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("DEPSLY_TELEMETRY_INGEST_HOST", "127.0.0.1"),
+        help="Host interface to bind.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("DEPSLY_TELEMETRY_INGEST_PORT", "8787")),
+        help="Port to listen on.",
+    )
     parser.add_argument(
         "--db-path",
         type=Path,
-        default=ROOT / "var" / "telemetry" / "telemetry.sqlite3",
+        default=Path(
+            os.environ.get(
+                "DEPSLY_TELEMETRY_INGEST_DB_PATH",
+                str(ROOT / "var" / "telemetry" / "telemetry.sqlite3"),
+            )
+        ),
         help="SQLite path for raw telemetry events.",
     )
     return parser.parse_args()

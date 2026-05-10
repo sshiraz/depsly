@@ -1,0 +1,14 @@
+[Unit]
+Description=Depsly telemetry ingest service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/depsly
+EnvironmentFile=/etc/depsly-telemetry.env
+ExecStart=/usr/bin/python3 /opt/depsly/scripts/telemetry_ingest_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

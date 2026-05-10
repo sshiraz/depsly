@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 from core.telemetry import sample_telemetry_event
 from core.telemetry_ingest import count_stored_telemetry_events, handle_ingest_post, health_response
+from scripts import telemetry_ingest_server
 
 
 def valid_event() -> dict:
@@ -95,3 +96,16 @@ def test_post_unknown_path_returns_404(tmp_path):
     )
     assert status == 404
     assert payload == {"error": "not_found"}
+
+
+def test_parse_args_reads_environment_defaults(monkeypatch):
+    monkeypatch.setenv("DEPSLY_TELEMETRY_INGEST_HOST", "0.0.0.0")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_INGEST_PORT", "9797")
+    monkeypatch.setenv("DEPSLY_TELEMETRY_INGEST_DB_PATH", "/tmp/depsly-telemetry.sqlite3")
+    monkeypatch.setattr(sys, "argv", ["telemetry_ingest_server.py"])
+
+    args = telemetry_ingest_server.parse_args()
+
+    assert args.host == "0.0.0.0"
+    assert args.port == 9797
+    assert args.db_path == Path("/tmp/depsly-telemetry.sqlite3")
