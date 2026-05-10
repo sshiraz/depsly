@@ -97,6 +97,65 @@ DEV_DEPS_LOCKFILE = json.dumps({
     }
 })
 
+MULTI_VERSION_LOCKFILE = json.dumps({
+    "name": "my-app",
+    "version": "1.0.0",
+    "lockfileVersion": 3,
+    "packages": {
+        "": {
+            "name": "my-app",
+            "version": "1.0.0",
+            "dependencies": {
+                "foo": "^1.0.0",
+                "bar": "^1.0.0"
+            }
+        },
+        "node_modules/foo": {
+            "version": "1.0.0",
+            "dependencies": {
+                "shared": "^2.0.0"
+            }
+        },
+        "node_modules/foo/node_modules/shared": {
+            "version": "2.0.0"
+        },
+        "node_modules/bar": {
+            "version": "1.0.0",
+            "dependencies": {
+                "shared": "^1.0.0"
+            }
+        },
+        "node_modules/shared": {
+            "version": "1.0.0"
+        }
+    }
+})
+
+
+NESTED_SCOPED_LOCKFILE = json.dumps({
+    "name": "my-app",
+    "version": "1.0.0",
+    "lockfileVersion": 3,
+    "packages": {
+        "": {
+            "name": "my-app",
+            "version": "1.0.0",
+            "dependencies": {"@scope/pkg": "^1.0.0"}
+        },
+        "node_modules/@scope/pkg": {
+            "version": "1.0.0",
+            "dependencies": {"@scope/dep": "^2.0.0"}
+        },
+        "node_modules/@scope/pkg/node_modules/@scope/dep": {
+            "version": "2.0.0"
+        },
+        "node_modules/@scope/dep": {
+            "version": "1.0.0"
+        }
+    }
+})
+
+
 MINIMAL_LOCKFILE = json.dumps({
     "name": "empty-app",
     "version": "0.0.1",
@@ -203,6 +262,83 @@ class TestParsePackageLock:
     def test_file_not_found(self, tmp_path):
         with pytest.raises(IngestionError, match="File not found"):
             parse_package_lock(tmp_path / "nonexistent.json")
+
+    def test_multiple_versions_kept_distinct(self):
+        result = parse_package_lock(MULTI_VERSION_LOCKFILE)
+        # Both shared@1.0.0 (top-level) and shared@2.0.0 (nested under foo)
+        # must be present as separate entries.
+        assert "shared@1.0.0" in result["packages"]
+        assert "shared@2.0.0" in result["packages"]
+        # foo gets the nested 2.0.0; bar gets the top-level 1.0.0.
+        foo = result["packages"]["foo@1.0.0"]
+        bar = result["packages"]["bar@1.0.0"]
+        assert "shared@2.0.0" in foo["dependencies"]
+        assert "shared@1.0.0" not in foo["dependencies"]
+        assert "shared@1.0.0" in bar["dependencies"]
+        assert "shared@2.0.0" not in bar["dependencies"]
+
+    def test_nested_install_resolves_to_inner_version(self):
+        """When a nested node_modules/<dep> exists, the closer one wins."""
+        result = parse_package_lock(NESTED_SCOPED_LOCKFILE)
+        pkg = result["packages"]["@scope/pkg@1.0.0"]
+        # Inner @scope/dep@2.0.0 takes precedence over top-level 1.0.0
+        assert "@scope/dep@2.0.0" in pkg["dependencies"]
+        assert "@scope/dep@1.0.0" not in pkg["dependencies"]
+        # Both versions still exist as nodes
+        assert "@scope/dep@1.0.0" in result["packages"]
+        assert "@scope/dep@2.0.0" in result["packages"]
+
+    def test_install_paths_recorded_for_each_key(self):
+        """Each normalized entry lists every lockfile path where it was found.
+        Lets downstream code detect npm-hoisting misses (same name@version at
+        multiple paths) and multi-version installs (same name, multiple keys).
+        """
+        result = parse_package_lock(MULTI_VERSION_LOCKFILE)
+        assert result["packages"]["foo@1.0.0"]["install_paths"] == ["node_modules/foo"]
+        assert result["packages"]["shared@1.0.0"]["install_paths"] == ["node_modules/shared"]
+        assert result["packages"]["shared@2.0.0"]["install_paths"] == [
+            "node_modules/foo/node_modules/shared"
+        ]
+        # Root path is empty string
+        assert result["packages"]["my-app@1.0.0"]["install_paths"] == [""]
+
+    def test_install_paths_collapse_duplicates(self):
+        """When the same name@version appears at multiple paths (npm couldn't
+        fully hoist it), all paths are recorded under one entry."""
+        lockfile = json.dumps({
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "app", "version": "1.0.0",
+                     "dependencies": {"a": "^1.0.0", "b": "^1.0.0"}},
+                "node_modules/a": {"version": "1.0.0", "dependencies": {"shared": "^1.0.0"}},
+                "node_modules/b": {"version": "1.0.0", "dependencies": {"shared": "^1.0.0"}},
+                "node_modules/a/node_modules/shared": {"version": "1.0.0"},
+                "node_modules/b/node_modules/shared": {"version": "1.0.0"}
+            }
+        })
+        result = parse_package_lock(lockfile)
+        assert result["packages"]["shared@1.0.0"]["install_paths"] == [
+            "node_modules/a/node_modules/shared",
+            "node_modules/b/node_modules/shared",
+        ]
+
+    def test_walks_up_to_top_level(self):
+        """Dep declared by a nested package falls back to top-level when
+        no closer install exists."""
+        lockfile = json.dumps({
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "app", "version": "1.0.0", "dependencies": {"a": "^1.0.0"}},
+                "node_modules/a": {
+                    "version": "1.0.0",
+                    "dependencies": {"common": "^1.0.0"}
+                },
+                "node_modules/common": {"version": "1.0.0"}
+            }
+        })
+        result = parse_package_lock(lockfile)
+        a = result["packages"]["a@1.0.0"]
+        assert "common@1.0.0" in a["dependencies"]
 
 
 # ---------------------------------------------------------------------------
