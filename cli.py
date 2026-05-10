@@ -656,7 +656,24 @@ def _format_trace_result(result) -> str:
 
 @click.group()
 def cli() -> None:
-    """Depsly — dependency risk intelligence."""
+    """Depsly — dependency risk intelligence for npm projects.
+
+    Analyzes a package-lock.json locally to surface deep, concentrated, or
+    risky dependency structures. No source uploads, no account, no rate
+    limits.
+
+    \b
+    Typical workflow:
+      analyze → recommend → trace → simulate-remove
+                              ↓
+                         save-scan → list-scans → compare-scans
+                              ↓
+                          graph-html
+
+    Run any command with --help for details. All commands accept a
+    package-lock.json (npm v2/v3 lockfiles) as input. Structural analysis
+    only — does not guarantee install, build, or runtime correctness.
+    """
 
 
 @cli.command()
@@ -674,7 +691,15 @@ def cli() -> None:
 )
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool) -> None:
-    """Analyze a package-lock.json file."""
+    """Analyze a package-lock.json file and report graph-level risk.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+
+    Builds the full dependency graph and prints: total / direct /
+    transitive package counts, max depth, top packages by fanout and blast
+    radius, cycle/unresolved flags, and a project risk score (0-100).
+    Use --json for machine-readable output suitable for scripting or CI.
+    """
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
@@ -748,7 +773,16 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
 )
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> None:
-    """Recommend package actions for a package-lock.json file."""
+    """Rank packages by risk and recommend a concrete action for each.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+
+    Each recommendation has a type (REMOVE, REVIEW, or TRACE_UPSTREAM)
+    and a short rationale. Follow up with `trace <pkg>` to see why a
+    transitive package is present, or `simulate-remove <pkg>` to estimate
+    impact before acting. Use --json to capture the same shape that
+    `save-scan` persists.
+    """
     try:
         if as_json:
             output = _build_recommendation_export(lockfile, include_dev, limit)
@@ -782,7 +816,17 @@ def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> N
     help="Max recommendations to save (default: 10).",
 )
 def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
-    """Persist a normalized recommendation scan locally."""
+    """Persist a normalized recommendation scan locally for later comparison.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+
+    Writes the same JSON `recommend --json` produces to:
+    $DEPSLY_HOME/scans/<project-slug>-<timestamp>.json
+    (defaults to ~/.depsly/scans/ when DEPSLY_HOME is unset).
+
+    Use this to capture a baseline, then revisit with `list-scans` and
+    diff against a later scan with `compare-scans`.
+    """
     try:
         output = _build_recommendation_export(lockfile, include_dev, limit)
         saved_path = save_scan_export(output)
@@ -794,7 +838,13 @@ def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
 @cli.command("list-scans")
 @click.option("--project", "project_name", help="Filter saved scans by project name.")
 def list_scans(project_name: str | None) -> None:
-    """List saved local scan files."""
+    """List saved local scan files in timestamp order.
+
+    Reads from $DEPSLY_HOME/scans/ (defaults to ~/.depsly/scans/).
+
+    Output format: <path> | <project name> | <timestamp>.
+    Pass paths to `compare-scans` to diff two saved scans.
+    """
     try:
         scan_paths = list_saved_scans(project_name)
         if not scan_paths:
@@ -815,7 +865,16 @@ def list_scans(project_name: str | None) -> None:
 @click.argument("after_scan", type=click.Path(exists=True, path_type=Path))
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
-    """Compare two saved normalized scan files."""
+    """Compare two saved normalized scan files and report aggregate deltas.
+
+    BEFORE_SCAN and AFTER_SCAN are paths to JSON files produced by
+    `save-scan` (typically under ~/.depsly/scans/).
+
+    Reports aggregate changes only: total / direct / transitive
+    dependency counts, max depth, and whether the top recommendation
+    changed. Per-package diffs are not produced. Use --json for
+    machine-readable output.
+    """
     try:
         comparison = compare_scan_exports(load_scan_export(before_scan), load_scan_export(after_scan))
         if as_json:
@@ -879,7 +938,14 @@ def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
     help="Open the generated HTML in your default browser.",
 )
 def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open_browser: bool) -> None:
-    """Generate an interactive HTML dependency graph explorer."""
+    """Generate a self-contained interactive HTML dependency graph explorer.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+
+    Writes a single HTML file with a clickable graph view (no network
+    calls at view time). Default output: <lockfile-dir>/depsly-graph.html.
+    Pass --open to launch the file in your default browser when done.
+    """
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
@@ -913,7 +979,17 @@ def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open
 )
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, as_json: bool) -> None:
-    """Explain why a package exists by tracing shortest root-to-target paths."""
+    """Explain why a package exists by tracing shortest root-to-target paths.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+    PACKAGE_KEY is the target — a bare name (e.g. "lodash") or
+    name@version (e.g. "lodash@4.17.21"). Bare names resolve to the
+    version present in the graph.
+
+    Prints up to --max-paths shortest dependency chains from project
+    roots to the target. Useful for understanding why a transitive
+    package was pulled in.
+    """
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
@@ -941,7 +1017,15 @@ def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, a
 )
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json: bool) -> None:
-    """Simulate removing a package and show the impact."""
+    """Simulate removing a package and report which packages become orphaned.
+
+    LOCKFILE is a path to a package-lock.json (npm v2/v3).
+    PACKAGE_KEY is the package to remove — bare name or name@version.
+
+    Structural simulation only: computes the set of packages that would
+    become unreachable from any root if PACKAGE_KEY were dropped from
+    the graph. Does not modify package-lock.json and does not run npm.
+    """
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
