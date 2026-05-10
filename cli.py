@@ -5,6 +5,7 @@ from __future__ import annotations
 import json as json_mod
 import webbrowser
 from pathlib import Path
+from time import perf_counter
 
 import click
 
@@ -26,11 +27,44 @@ from core.scoring import PACKAGE_SCORING_VERSION, score_project
 from core.simulate import simulate_remove as simulate_remove_result
 from core.storage import save_scan_export
 from core.storage import compare_scan_exports, list_saved_scans, load_scan_export
+from core.telemetry import (
+    build_telemetry_event,
+    delete_local_telemetry_data,
+    disable_telemetry,
+    enable_telemetry,
+    failure_category_for_exception,
+    queue_telemetry_event,
+    sample_telemetry_event,
+    telemetry_enabled,
+)
 from core.trace import trace_package
 from core.visualize import write_graph_html
 
 
 _RISK_COLORS = {"CRITICAL": "red", "HIGH": "red", "MODERATE": "yellow", "LOW": "green"}
+
+
+def _record_telemetry(
+    *,
+    command: str,
+    started_at: float,
+    success: bool,
+    options: dict | None = None,
+    total_nodes: int | None = None,
+    failure_category: str | None = None,
+) -> None:
+    """Queue one coarse local telemetry event when telemetry is enabled."""
+    if not telemetry_enabled():
+        return
+    event = build_telemetry_event(
+        command=command,
+        started_at=started_at,
+        success=success,
+        options=options,
+        total_nodes=total_nodes,
+        failure_category=failure_category,
+    )
+    queue_telemetry_event(event)
 
 
 def _project_name(report: GraphReport) -> str:
@@ -676,6 +710,69 @@ def cli() -> None:
     """
 
 
+@cli.group("telemetry")
+def telemetry_group() -> None:
+    """Manage optional anonymous CLI usage telemetry."""
+
+
+@telemetry_group.command("status")
+def telemetry_status() -> None:
+    """Show current telemetry status and collection boundaries."""
+    if telemetry_enabled():
+        click.echo("Telemetry: enabled")
+        click.echo("")
+        click.echo("Depsly is sending anonymous command-level usage data to help improve the product.")
+        click.echo("")
+        click.echo("Never collected: lockfile contents, dependency graph, package names,")
+        click.echo("file paths, and command output.")
+    else:
+        click.echo("Telemetry: disabled")
+        click.echo("")
+        click.echo("Depsly is not sending telemetry.")
+        click.echo("")
+        click.echo("Enable at any time with:")
+        click.echo("  depsly telemetry enable")
+
+
+@telemetry_group.command("enable")
+def telemetry_enable() -> None:
+    """Enable anonymous command-level telemetry."""
+    enable_telemetry()
+    click.echo("Telemetry enabled.")
+    click.echo("")
+    click.echo("Depsly will send anonymous command-level usage data to help improve the")
+    click.echo("product. It will not upload your lockfile, dependency graph, package names,")
+    click.echo("file paths, or command output.")
+
+
+@telemetry_group.command("disable")
+def telemetry_disable() -> None:
+    """Disable telemetry."""
+    disable_telemetry()
+    click.echo("Telemetry disabled.")
+    click.echo("")
+    click.echo("Depsly will stop sending telemetry. You can re-enable it later with:")
+    click.echo("  depsly telemetry enable")
+
+
+@telemetry_group.command("show-sample")
+def telemetry_show_sample() -> None:
+    """Show a representative telemetry event."""
+    click.echo("Sample telemetry event:")
+    click.echo("")
+    click.echo(json_mod.dumps(sample_telemetry_event(), indent=2))
+
+
+@telemetry_group.command("delete-data")
+def telemetry_delete_data() -> None:
+    """Delete queued unsent local telemetry data."""
+    delete_local_telemetry_data()
+    click.echo("Local telemetry data deleted.")
+    click.echo("")
+    click.echo("Any queued unsent telemetry events stored by Depsly on this machine have been")
+    click.echo("removed.")
+
+
 @cli.command()
 @click.argument("lockfile", type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -700,9 +797,13 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
     radius, cycle/unresolved flags, and a project risk score (0-100).
     Use --json for machine-readable output suitable for scripting or CI.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev, "json": as_json}
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        total_nodes = len(graph.nodes)
         report = analyze_graph(graph, fanout_limit=fanout_limit)
         if as_json:
             proj_score = score_project(report)
@@ -754,7 +855,22 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
                     normalized_data=normalized,
                 )
             )
+        _record_telemetry(
+            command="analyze",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="analyze",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -783,13 +899,18 @@ def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> N
     impact before acting. Use --json to capture the same shape that
     `save-scan` persists.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev, "json": as_json}
     try:
         if as_json:
             output = _build_recommendation_export(lockfile, include_dev, limit)
+            total_nodes = output["project"]["total_dependencies"]
             click.echo(json_mod.dumps(output, indent=2))
         else:
             normalized = parse_package_lock(lockfile, include_dev=include_dev)
             graph = build_graph(normalized)
+            total_nodes = len(graph.nodes)
             recommendations = recommend_packages(graph, normalized_data=normalized, limit=limit)
             project_name = _recommend_project_name(graph)
             click.echo(_format_recommendations(
@@ -798,7 +919,22 @@ def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> N
                 len(graph.nodes),
                 project_name,
             ))
+        _record_telemetry(
+            command="recommend",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="recommend",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -827,11 +963,30 @@ def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
     Use this to capture a baseline, then revisit with `list-scans` and
     diff against a later scan with `compare-scans`.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev}
     try:
         output = _build_recommendation_export(lockfile, include_dev, limit)
+        total_nodes = output["project"]["total_dependencies"]
         saved_path = save_scan_export(output)
         click.echo(f"Saved scan: {saved_path}")
+        _record_telemetry(
+            command="save-scan",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="save-scan",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -845,10 +1000,18 @@ def list_scans(project_name: str | None) -> None:
     Output format: <path> | <project name> | <timestamp>.
     Pass paths to `compare-scans` to diff two saved scans.
     """
+    started_at = perf_counter()
     try:
         scan_paths = list_saved_scans(project_name)
         if not scan_paths:
             click.echo("No saved scans found.")
+            _record_telemetry(
+                command="list-scans",
+                started_at=started_at,
+                success=True,
+                options=None,
+                total_nodes=None,
+            )
             return
 
         for path in scan_paths:
@@ -856,7 +1019,22 @@ def list_scans(project_name: str | None) -> None:
             click.echo(
                 f"{path} | {scan['project']['name']} | {scan['scan']['timestamp']}"
             )
+        _record_telemetry(
+            command="list-scans",
+            started_at=started_at,
+            success=True,
+            options=None,
+            total_nodes=None,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="list-scans",
+            started_at=started_at,
+            success=False,
+            options=None,
+            total_nodes=None,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -875,10 +1053,19 @@ def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
     changed. Per-package diffs are not produced. Use --json for
     machine-readable output.
     """
+    started_at = perf_counter()
+    options = {"json": as_json}
     try:
         comparison = compare_scan_exports(load_scan_export(before_scan), load_scan_export(after_scan))
         if as_json:
             click.echo(json_mod.dumps(comparison, indent=2))
+            _record_telemetry(
+                command="compare-scans",
+                started_at=started_at,
+                success=True,
+                options=options,
+                total_nodes=None,
+            )
             return
 
         lines: list[str] = []
@@ -914,7 +1101,22 @@ def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
             f"  - Changed: {'yes' if comparison['recommendations']['changed'] else 'no'}"
         )
         click.echo("\n".join(lines))
+        _record_telemetry(
+            command="compare-scans",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=None,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="compare-scans",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=None,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -946,9 +1148,13 @@ def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open
     calls at view time). Default output: <lockfile-dir>/depsly-graph.html.
     Pass --open to launch the file in your default browser when done.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev, "open_browser": open_browser}
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        total_nodes = len(graph.nodes)
         destination = output_path or lockfile.parent / "depsly-graph.html"
         written_path = write_graph_html(
             graph,
@@ -959,7 +1165,22 @@ def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open
         click.echo(f"Graph HTML written to: {written_path}")
         if open_browser:
             webbrowser.open(written_path.resolve().as_uri())
+        _record_telemetry(
+            command="graph-html",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="graph-html",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -990,9 +1211,13 @@ def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, a
     roots to the target. Useful for understanding why a transitive
     package was pulled in.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev, "json": as_json}
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        total_nodes = len(graph.nodes)
         result = trace_package(graph, package_key, max_paths=max_paths)
         if as_json:
             click.echo(
@@ -1003,7 +1228,22 @@ def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, a
             )
         else:
             click.echo(_format_trace_result(result))
+        _record_telemetry(
+            command="trace",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
     except Exception as e:
+        _record_telemetry(
+            command="trace",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 
@@ -1026,9 +1266,13 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json
     become unreachable from any root if PACKAGE_KEY were dropped from
     the graph. Does not modify package-lock.json and does not run npm.
     """
+    started_at = perf_counter()
+    total_nodes: int | None = None
+    options = {"include_dev": include_dev, "json": as_json}
     try:
         normalized = parse_package_lock(lockfile, include_dev=include_dev)
         graph = build_graph(normalized)
+        total_nodes = len(graph.nodes)
         resolved_package_key = resolve_package_key(graph, package_key, normalized_data=normalized)
 
         if resolved_package_key is None:
@@ -1056,6 +1300,13 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json
                     ),
                     indent=2,
                 )
+            )
+            _record_telemetry(
+                command="simulate-remove",
+                started_at=started_at,
+                success=True,
+                options=options,
+                total_nodes=total_nodes,
             )
             return
 
@@ -1118,9 +1369,32 @@ def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json
         lines.append(simulation.disclaimer)
 
         click.echo("\n".join(lines))
-    except click.ClickException:
+        _record_telemetry(
+            command="simulate-remove",
+            started_at=started_at,
+            success=True,
+            options=options,
+            total_nodes=total_nodes,
+        )
+    except click.ClickException as e:
+        _record_telemetry(
+            command="simulate-remove",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise
     except Exception as e:
+        _record_telemetry(
+            command="simulate-remove",
+            started_at=started_at,
+            success=False,
+            options=options,
+            total_nodes=total_nodes,
+            failure_category=failure_category_for_exception(e),
+        )
         raise click.ClickException(str(e))
 
 

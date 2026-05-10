@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://depsly.local/schema/telemetry-event-v1.json",
+  "title": "Depsly Telemetry Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event",
+    "schema_version",
+    "install_id",
+    "session_id",
+    "timestamp",
+    "depsly_version",
+    "platform",
+    "python_version",
+    "command",
+    "options",
+    "result"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "const": "cli.command.completed"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "install_id": {
+      "type": "string",
+      "description": "Anonymous random identifier generated locally on telemetry enable."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Ephemeral identifier for one CLI session or process."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "depsly_version": {
+      "type": "string"
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["macos", "linux", "windows", "unknown"]
+    },
+    "python_version": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "analyze",
+        "recommend",
+        "trace",
+        "simulate-remove",
+        "save-scan",
+        "list-scans",
+        "compare-scans",
+        "graph-html"
+      ]
+    },
+    "first_use_on_install": {
+      "type": "boolean"
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include_dev": { "type": "boolean" },
+        "json": { "type": "boolean" },
+        "open_browser": { "type": "boolean" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "success",
+        "duration_bucket",
+        "graph_size_bucket"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "duration_bucket": {
+          "type": "string",
+          "enum": ["<1s", "1-5s", "5-30s", "30s+"]
+        },
+        "graph_size_bucket": {
+          "type": "string",
+          "enum": ["unknown", "0-50", "51-200", "201-1000", "1000+"]
+        },
+        "failure_category": {
+          "type": "string",
+          "enum": [
+            "parse_error",
+            "unsupported_lockfile",
+            "missing_file",
+            "internal_error"
+          ]
+        }
+      }
+    }
+  }
+}
