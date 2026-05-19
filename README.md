@@ -278,7 +278,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.9)
+Early release (v0.1.10)
 
 Core features are stable:
 - analyze
@@ -294,6 +294,8 @@ Core features are stable:
 - compare-scans
 - graph-html
   Explorer-first HTML report with collapsible tree, path view, and neighborhood graph
+- telemetry
+  Opt-in anonymous command-level usage telemetry with local queueing, batch flush, and reference ingest/reporting tooling
 - scripts/scan_repos.py batch workflow
 
 ---

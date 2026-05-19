@@ -49,7 +49,7 @@ Optional later:
       "install_id": "b6d8d8ff9e26415ab5ac8ad8b5d8933e",
       "session_id": "3d09939eaabd412dbda5c7c993cba1b8",
       "timestamp": "2026-05-10T19:59:58Z",
-      "depsly_version": "0.1.9",
+      "depsly_version": "0.1.10",
       "platform": "macos",
       "python_version": "3.11",
       "command": "recommend",

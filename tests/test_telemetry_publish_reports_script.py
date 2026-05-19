@@ -24,7 +24,7 @@ def test_telemetry_publish_reports_script_writes_artifacts(tmp_path):
             "install_id": "install-123",
             "session_id": "session-123",
             "timestamp": "2026-05-10T20:00:00Z",
-            "depsly_version": "0.1.9",
+            "depsly_version": "0.1.10",
             "platform": "macos",
             "python_version": "3.11",
             "command": "analyze",

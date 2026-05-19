@@ -75,9 +75,41 @@ class TestRecommendCli:
         assert result.exit_code == 0
         assert result.output.strip() == "No package recommendations available."
 
-    def test_defer_actionability_is_clarified(self):
+    def test_defer_actionability_is_clarified(self, tmp_path):
+        lockfile = tmp_path / "package-lock.json"
+        packages = {
+            "": {
+                "name": "app",
+                "version": "1.0.0",
+                "dependencies": {
+                    "tiny": "^1.0.0",
+                    "big": "^1.0.0",
+                },
+            },
+            "node_modules/tiny": {
+                "version": "1.0.0",
+            },
+            "node_modules/big": {
+                "version": "1.0.0",
+                "dependencies": {"big-1": "^1.0.0"},
+            },
+        }
+        for index in range(1, 21):
+            key = f"node_modules/big-{index}"
+            entry = {"version": "1.0.0"}
+            if index < 20:
+                entry["dependencies"] = {f"big-{index + 1}": "^1.0.0"}
+            packages[key] = entry
+
+        lockfile.write_text(json.dumps({
+            "name": "app",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": packages,
+        }))
+
         runner = CliRunner()
-        result = runner.invoke(cli, ["recommend", LOCKFILE, "--limit", "5"])
+        result = runner.invoke(cli, ["recommend", str(lockfile), "--limit", "30"])
         assert result.exit_code == 0
         assert "Action: DEFER" in result.output
         assert "Actionability: HIGH (low impact)" in result.output

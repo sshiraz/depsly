@@ -29,7 +29,7 @@ def make_event(*, command: str, success: bool, duration_bucket: str, graph_size_
             "install_id": "install-123",
             "session_id": "session-123",
             "timestamp": timestamp,
-            "depsly_version": "0.1.9",
+            "depsly_version": "0.1.10",
             "platform": "macos",
             "python_version": "3.11",
             "command": command,
@@ -113,7 +113,7 @@ def test_command_metrics_and_buckets(tmp_path):
         {
             "metric_date": "2026-05-10",
             "command": "analyze",
-            "depsly_version": "0.1.9",
+            "depsly_version": "0.1.10",
             "platform": "macos",
             "failure_category": "parse_error",
             "event_count": 1,
