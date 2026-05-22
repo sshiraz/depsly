@@ -1,16 +1,4 @@
-"""Parse package-lock.json (v3) into the normalized format expected by build_graph().
-
-Resolution model:
-    npm allows the same package name to appear at multiple versions (e.g.
-    react@18.2.0 at node_modules/react and react@17.0.2 nested under
-    node_modules/some-pkg/node_modules/react). Dependency edges are
-    resolved by walking up the lockfile path tree from the dependent,
-    matching Node.js module resolution: a dep declared at path P is
-    looked up first at P/node_modules/<dep>, then at the closest ancestor
-    that has node_modules/<dep>, finally falling back to the top-level
-    node_modules/<dep>. This preserves multi-version installs as distinct
-    graph nodes.
-"""
+"""Parse supported JS lockfiles into the normalized format expected by build_graph()."""
 
 from __future__ import annotations
 
@@ -22,6 +10,35 @@ class IngestionError(Exception):
     """Raised when a lockfile cannot be parsed."""
 
 
+def parse_lockfile(
+    lockfile: str | Path,
+    *,
+    include_dev: bool = True,
+) -> dict:
+    """Parse a supported lockfile and return normalized graph input."""
+    path = _coerce_path(lockfile)
+    if path is None:
+        text = _coerce_text(lockfile)
+        if text.lstrip().startswith("{"):
+            return parse_package_lock(text, include_dev=include_dev)
+        raise IngestionError(
+            "String lockfile contents are only supported for package-lock.json. "
+            "Pass a yarn.lock path to parse Yarn lockfiles."
+        )
+
+    filename = path.name
+    if filename == "package-lock.json":
+        return parse_package_lock(path, include_dev=include_dev)
+    if filename == "yarn.lock":
+        return parse_yarn_lock(path, include_dev=include_dev)
+    if path.suffix == ".json":
+        return parse_package_lock(path, include_dev=include_dev)
+
+    raise IngestionError(
+        f"Unsupported lockfile '{filename}'. Expected package-lock.json, yarn.lock, or a JSON package-lock file."
+    )
+
+
 def parse_package_lock(
     lockfile: str | Path,
     *,
@@ -31,22 +48,12 @@ def parse_package_lock(
 
     Supports lockfileVersion 2 and 3 (npm v7+). The returned dict is ready
     to pass directly to build_graph().
-
-    Args:
-        lockfile: Path to package-lock.json, or its contents as a string.
-        include_dev: Whether to include devDependencies for the root package.
-            True by default — set to False for production-only analysis.
-
-    Returns:
-        Normalized dict with "root" and "packages" keys.
     """
-    if isinstance(lockfile, Path) or (isinstance(lockfile, str) and not lockfile.lstrip().startswith("{")):
-        path = Path(lockfile)
-        if not path.exists():
-            raise IngestionError(f"File not found: {path}")
+    path = _coerce_path(lockfile)
+    if path is not None:
         raw = json.loads(path.read_text())
     else:
-        raw = json.loads(lockfile)
+        raw = json.loads(_coerce_text(lockfile))
 
     lockfile_version = raw.get("lockfileVersion")
     if lockfile_version not in (2, 3):
@@ -58,24 +65,113 @@ def parse_package_lock(
     if not isinstance(packages, dict):
         raise IngestionError("'packages' field must be a dict")
 
-    return _normalize_v3(packages, include_dev=include_dev)
+    return _normalize_package_lock(packages, include_dev=include_dev)
 
 
-def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
-    """Convert lockfile v3 packages map to normalized graph input.
+def parse_yarn_lock(
+    lockfile: Path,
+    *,
+    include_dev: bool = True,
+) -> dict:
+    """Parse a Yarn Classic v1 yarn.lock file and return normalized graph input."""
+    if lockfile.name != "yarn.lock":
+        raise IngestionError("Yarn lockfile path must end with yarn.lock")
 
-    Lockfile v3 keys are paths like "" (root) and "node_modules/react".
-    Dependencies are name->semver-range maps that need to be resolved to
-    the actual installed name@version. Resolution walks up from the
-    dependent's path so nested installs preserve their distinct version.
-    """
+    lines = lockfile.read_text(encoding="utf-8").splitlines()
+    if not any("yarn lockfile v1" in line for line in lines[:5]):
+        raise IngestionError("Unsupported yarn.lock format. Expected Yarn Classic v1.")
+
+    entries = _parse_yarn_v1_entries(lines)
+    if not entries:
+        raise IngestionError("yarn.lock did not contain any package entries.")
+
+    selector_to_key: dict[str, str] = {}
+    packages: dict[str, dict] = {}
+
+    for entry in entries:
+        name = _selector_name(entry["selectors"][0])
+        version = entry.get("version")
+        if not version:
+            raise IngestionError(f"Missing version for yarn entry: {entry['selectors'][0]}")
+        key = f"{name}@{version}"
+        packages.setdefault(
+            key,
+            {
+                "name": name,
+                "version": version,
+                "dependencies": [],
+                "selectors": [],
+            },
+        )
+        packages[key]["selectors"].extend(entry["selectors"])
+        for selector in entry["selectors"]:
+            selector_to_key[selector] = key
+
+    manifest = _read_sibling_package_json(lockfile)
+    root_name = manifest.get("name") or lockfile.parent.name or "yarn-project"
+    root_version = manifest.get("version") or "0.0.0"
+    root_dependencies = _root_dependency_requests(manifest, include_dev=include_dev)
+
+    for entry in entries:
+        key = selector_to_key[entry["selectors"][0]]
+        normalized_deps: list[str] = []
+        for dep_name, dep_range in entry.get("dependencies", {}).items():
+            dep_key = _resolve_yarn_dependency(dep_name, dep_range, selector_to_key, packages)
+            if dep_key is not None and dep_key not in normalized_deps:
+                normalized_deps.append(dep_key)
+        packages[key]["dependencies"] = normalized_deps
+
+    if root_dependencies:
+        root_dep_keys = []
+        unresolved = []
+        for dep_name, dep_range in root_dependencies.items():
+            dep_key = _resolve_yarn_dependency(dep_name, dep_range, selector_to_key, packages)
+            if dep_key is None:
+                unresolved.append(dep_name)
+                continue
+            if dep_key not in root_dep_keys:
+                root_dep_keys.append(dep_key)
+    else:
+        root_dep_keys = _yarn_root_fallback(packages)
+        unresolved = []
+
+    root_key = f"{root_name}@{root_version}"
+    root_entry = {
+        "name": root_name,
+        "version": root_version,
+        "dependencies": root_dep_keys,
+    }
+    if unresolved:
+        root_entry["unresolved_dependencies"] = sorted(set(unresolved))
+
+    root_dev_keys: list[str] = []
+    if include_dev and manifest:
+        for dep_name, dep_range in manifest.get("devDependencies", {}).items():
+            dep_key = _resolve_yarn_dependency(dep_name, dep_range, selector_to_key, packages)
+            if dep_key is not None:
+                root_dev_keys.append(dep_key)
+
+    normalized_packages = {
+        root_key: root_entry,
+    }
+    for key, package in packages.items():
+        normalized_packages[key] = {
+            "name": package["name"],
+            "version": package["version"],
+            "dependencies": package["dependencies"],
+        }
+
+    return {
+        "root": root_key,
+        "packages": normalized_packages,
+        "root_dev_dependency_keys": tuple(sorted(set(root_dev_keys))),
+    }
+
+
+def _normalize_package_lock(packages: dict, *, include_dev: bool) -> dict:
     if "" not in packages:
         raise IngestionError("Lockfile has no root entry (empty string key in packages)")
 
-    # Two passes are needed because dependency resolution (pass 2) has to
-    # know every path that exists before any single dep can be resolved —
-    # the lookup walks up the tree and may land on a path declared later
-    # in the dict than the one currently being processed.
     path_to_key: dict[str, str] = {}
     root_key: str | None = None
     root_dev_dependency_names: set[str] = set()
@@ -91,11 +187,6 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
             root_key = key
             root_dev_dependency_names = set(info.get("devDependencies", {}))
 
-    # Build one normalized entry per unique name@version. The graph layer
-    # treats nodes as logical packages, not install sites — collapsing
-    # repeated installs of the same name@version preserves correct graph
-    # semantics. install_paths (populated below) keeps the per-path list
-    # so callers can still reason about npm hoisting quality.
     normalized: dict[str, dict] = {}
 
     for path, info in packages.items():
@@ -155,33 +246,165 @@ def _normalize_v3(packages: dict, *, include_dev: bool) -> dict:
     }
 
 
+def _parse_yarn_v1_entries(lines: list[str]) -> list[dict]:
+    entries: list[dict] = []
+    current: dict | None = None
+    in_dependencies = False
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        if not line or line.startswith("#"):
+            continue
+
+        if not raw_line.startswith(" "):
+            if not line.endswith(":"):
+                raise IngestionError(f"Invalid yarn.lock entry header: {line}")
+            selectors = _parse_yarn_selectors(line[:-1])
+            current = {"selectors": selectors, "dependencies": {}}
+            entries.append(current)
+            in_dependencies = False
+            continue
+
+        if current is None:
+            continue
+
+        if raw_line.startswith("  ") and not raw_line.startswith("    "):
+            stripped = line.strip()
+            if stripped == "dependencies:":
+                in_dependencies = True
+                continue
+
+            in_dependencies = False
+            key, value = _parse_yarn_property(stripped)
+            current[key] = value
+            continue
+
+        if in_dependencies and raw_line.startswith("    "):
+            dep_name, dep_range = _parse_yarn_dependency(line.strip())
+            current["dependencies"][dep_name] = dep_range
+            continue
+
+    return entries
+
+
+def _parse_yarn_selectors(raw: str) -> list[str]:
+    selectors: list[str] = []
+    current: list[str] = []
+    in_quotes = False
+
+    for char in raw:
+        if char == '"':
+            in_quotes = not in_quotes
+            current.append(char)
+            continue
+        if char == "," and not in_quotes:
+            selectors.append(_strip_quotes("".join(current).strip()))
+            current = []
+            continue
+        current.append(char)
+
+    tail = "".join(current).strip()
+    if tail:
+        selectors.append(_strip_quotes(tail))
+    return selectors
+
+
+def _parse_yarn_property(line: str) -> tuple[str, str]:
+    key, _, raw_value = line.partition(" ")
+    return key, _strip_quotes(raw_value.strip())
+
+
+def _parse_yarn_dependency(line: str) -> tuple[str, str]:
+    if line.startswith('"'):
+        end = line.find('"', 1)
+        if end == -1:
+            raise IngestionError(f"Invalid yarn dependency line: {line}")
+        dep_name = line[1:end]
+        dep_range = _strip_quotes(line[end + 1 :].strip())
+        return dep_name, dep_range
+
+    dep_name, _, raw_range = line.partition(" ")
+    return dep_name, _strip_quotes(raw_range.strip())
+
+
+def _read_sibling_package_json(lockfile: Path) -> dict:
+    manifest_path = lockfile.with_name("package.json")
+    if not manifest_path.exists():
+        return {}
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise IngestionError(f"Invalid sibling package.json near {lockfile}") from exc
+
+
+def _root_dependency_requests(manifest: dict, *, include_dev: bool) -> dict[str, str]:
+    dependencies = dict(manifest.get("dependencies", {}))
+    if include_dev:
+        dependencies.update(manifest.get("devDependencies", {}))
+    return dependencies
+
+
+def _resolve_yarn_dependency(
+    dep_name: str,
+    dep_range: str,
+    selector_to_key: dict[str, str],
+    packages: dict[str, dict],
+) -> str | None:
+    candidates = [
+        f"{dep_name}@{dep_range}",
+        f"{dep_name}@npm:{dep_range}",
+        dep_name,
+    ]
+    for candidate in candidates:
+        dep_key = selector_to_key.get(candidate)
+        if dep_key is not None:
+            return dep_key
+
+    matching_keys: list[str] = []
+    for selector, dep_key in selector_to_key.items():
+        if _selector_name(selector) == dep_name:
+            matching_keys.append(dep_key)
+
+    if not matching_keys:
+        return None
+
+    preferred = sorted(
+        set(matching_keys),
+        key=lambda key: (0 if packages[key]["version"] == dep_range else 1, key),
+    )
+    return preferred[0]
+
+
+def _yarn_root_fallback(packages: dict[str, dict]) -> list[str]:
+    depended_on: set[str] = set()
+    for package in packages.values():
+        depended_on.update(package["dependencies"])
+    return sorted(key for key in packages if key not in depended_on)
+
+
+def _selector_name(selector: str) -> str:
+    if selector.startswith("@"):
+        second_at = selector.find("@", 1)
+        if second_at == -1:
+            return selector
+        return selector[:second_at]
+    first_at = selector.find("@")
+    if first_at == -1:
+        return selector
+    return selector[:first_at]
+
+
 def _resolve_dep_path(
     dependent_path: str,
     dep_name: str,
     packages: dict,
 ) -> str | None:
-    """Find the lockfile path that resolves dep_name from dependent_path.
-
-    Implements npm's module resolution: search dependent_path's
-    node_modules first, then walk up by stripping trailing
-    /node_modules/<segment> hops, falling back to top-level node_modules.
-
-    Workspace-style entries with `link: true` are followed once via
-    their `resolved` field to the canonical entry.
-    """
-    # Mirrors the runtime Node.js resolution rule: a package at path P
-    # sees deps in P/node_modules first, then in any ancestor's
-    # node_modules, then at the top level. Inner installs shadow outer
-    # ones, which is how npm supports a single project depending on two
-    # versions of the same package without a conflict.
     search_prefixes: list[str] = [dependent_path]
     current = dependent_path
     marker = "/node_modules/"
     while current:
         idx = current.rfind(marker)
         if idx == -1:
-            # Non-node_modules path (e.g. a workspace at "packages/foo").
-            # Resolution still falls back to the top-level node_modules.
             if current != "":
                 search_prefixes.append("")
             break
@@ -197,9 +420,6 @@ def _resolve_dep_path(
         if candidate not in packages:
             continue
         entry = packages[candidate]
-        # Workspaces appear in node_modules as link entries pointing at
-        # their real source path. Follow the link so the graph node is
-        # the actual workspace package, not an empty stub.
         if entry.get("link") and isinstance(entry.get("resolved"), str):
             target = entry["resolved"]
             if target in packages:
@@ -209,13 +429,6 @@ def _resolve_dep_path(
 
 
 def _name_from_path(path: str) -> str:
-    """Extract package name from a node_modules path.
-
-    "node_modules/@babel/core" -> "@babel/core"
-    "node_modules/react" -> "react"
-    Nested: "node_modules/foo/node_modules/bar" -> "bar"
-            "node_modules/foo/node_modules/@scope/bar" -> "@scope/bar"
-    """
     marker = "/node_modules/"
     idx = path.rfind(marker)
     if idx != -1:
@@ -224,3 +437,28 @@ def _name_from_path(path: str) -> str:
     if path.startswith(prefix):
         return path[len(prefix):]
     return ""
+
+
+def _coerce_path(lockfile: str | Path) -> Path | None:
+    if isinstance(lockfile, Path):
+        if not lockfile.exists():
+            raise IngestionError(f"File not found: {lockfile}")
+        return lockfile
+
+    if isinstance(lockfile, str) and not lockfile.lstrip().startswith("{"):
+        candidate = Path(lockfile)
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _coerce_text(lockfile: str | Path) -> str:
+    if isinstance(lockfile, Path):
+        return lockfile.read_text(encoding="utf-8")
+    return str(lockfile)
+
+
+def _strip_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1]
+    return value

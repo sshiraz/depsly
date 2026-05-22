@@ -44,6 +44,14 @@ def test_find_lockfile_falls_back_to_first_nested_path(tmp_path):
     assert find_lockfile(repo) == lock_a
 
 
+def test_find_lockfile_accepts_root_yarn_lock(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lockfile = repo / "yarn.lock"
+    lockfile.write_text("# yarn lockfile v1\n")
+    assert find_lockfile(repo) == lockfile
+
+
 def test_batch_output_filename_is_deterministic(tmp_path):
     repo = tmp_path / "My Repo"
     repo.mkdir()

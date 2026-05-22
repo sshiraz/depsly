@@ -12,6 +12,30 @@ from cli import cli
 
 
 class TestAnalyzeCli:
+    def test_analyze_supports_yarn_lock(self, tmp_path):
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "yarn-app",
+            "version": "1.0.0",
+            "dependencies": {"chalk": "^4.1.0"},
+        }))
+        (tmp_path / "yarn.lock").write_text(
+            """# yarn lockfile v1
+
+chalk@^4.1.0:
+  version "4.1.2"
+  dependencies:
+    ansi-styles "^4.1.0"
+
+ansi-styles@^4.1.0:
+  version "4.3.0"
+"""
+        )
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", str(tmp_path / "yarn.lock")])
+        assert result.exit_code == 0
+        assert "Project: yarn-app" in result.output
+        assert "chalk@4.1.2" in result.output
+
     def test_analyze_includes_model_signal_and_impact_signal(self):
         lockfile = os.path.join(os.path.dirname(__file__), "..", "nextjs-test", "package-lock.json")
         runner = CliRunner()
