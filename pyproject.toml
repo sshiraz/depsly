@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "depsly"
-version = "0.1.10"
+version = "0.1.11"
 description = "Local-first dependency decision CLI for JS/TS projects"
 authors = [{ name = "Sabri Shiraz" }]
 readme = "README.md"

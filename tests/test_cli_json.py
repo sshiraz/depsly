@@ -57,7 +57,7 @@ class TestAnalyzeJson:
         meta = parsed["meta"]
         assert meta["command"] == "analyze"
         assert meta["schema_version"] == "1.0"
-        assert meta["tool_version"] == "0.1.10"
+        assert meta["tool_version"] == "0.1.11"
         assert meta["include_dev"] is True
         assert meta["fanout_limit"] == 10
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
@@ -150,7 +150,7 @@ class TestRecommendJson:
         scan = parsed["scan"]
         assert scan["schema_version"] == "1.0"
         assert scan["scoring_version"] == "v1"
-        assert scan["tool_version"] == "0.1.10"
+        assert scan["tool_version"] == "0.1.11"
         assert scan["include_dev"] is True
         assert scan["limit"] == 3
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", scan["timestamp"])
@@ -223,7 +223,7 @@ class TestTraceJson:
         meta = parsed["meta"]
         assert meta["command"] == "trace"
         assert meta["schema_version"] == "1.0"
-        assert meta["tool_version"] == "0.1.10"
+        assert meta["tool_version"] == "0.1.11"
         assert meta["include_dev"] is True
         assert meta["max_paths"] == 3
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
@@ -278,7 +278,7 @@ class TestSimulateRemoveJson:
         meta = parsed["meta"]
         assert meta["command"] == "simulate-remove"
         assert meta["schema_version"] == "1.0"
-        assert meta["tool_version"] == "0.1.10"
+        assert meta["tool_version"] == "0.1.11"
         assert meta["include_dev"] is True
         assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", meta["timestamp"])
 
