@@ -34,7 +34,7 @@ So you can decide **where to spend your time**.
 
 ## ✨ What Depsly Does
 
-- Builds a full dependency graph from `package-lock.json`
+- Builds a full dependency graph from `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`
 - Analyzes structural risk (depth, fanout, transitive exposure)
 - Ranks dependencies by **impact × actionability**
 - Explains why transitive dependencies exist
@@ -278,7 +278,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.11)
+Early release (v0.1.12)
 
 Core features are stable:
 - analyze
@@ -292,6 +292,7 @@ Core features are stable:
 - save-scan
 - list-scans
 - compare-scans
+- pnpm-lock.yaml support
 - graph-html
   Explorer-first HTML report with collapsible tree, path view, and neighborhood graph
 - telemetry

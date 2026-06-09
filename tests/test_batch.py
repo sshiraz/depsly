@@ -52,6 +52,14 @@ def test_find_lockfile_accepts_root_yarn_lock(tmp_path):
     assert find_lockfile(repo) == lockfile
 
 
+def test_find_lockfile_accepts_root_pnpm_lock(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    lockfile = repo / "pnpm-lock.yaml"
+    lockfile.write_text("lockfileVersion: '9.0'\nimporters:\n  .: {}\n")
+    assert find_lockfile(repo) == lockfile
+
+
 def test_batch_output_filename_is_deterministic(tmp_path):
     repo = tmp_path / "My Repo"
     repo.mkdir()

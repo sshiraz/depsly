@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "depsly"
-version = "0.1.11"
+version = "0.1.12"
 description = "Local-first dependency decision CLI for JS/TS projects"
 authors = [{ name = "Sabri Shiraz" }]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.0",
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]

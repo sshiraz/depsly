@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.ingestion import IngestionError, parse_lockfile, parse_package_lock, parse_yarn_lock
+from core.ingestion import IngestionError, parse_lockfile, parse_package_lock, parse_pnpm_lock, parse_yarn_lock
 from core.graph import build_graph, collect_transitive_deps, graph_stats
 
 
@@ -185,6 +185,56 @@ ansi-styles@^4.1.0:
 
 supports-color@^7.1.0:
   version "7.2.0"
+"""
+
+PNPM_LOCKFILE = """lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      chalk:
+        specifier: ^4.1.0
+        version: 4.1.2
+    devDependencies:
+      left-pad:
+        specifier: ^1.3.0
+        version: 1.3.0
+      local-utils:
+        specifier: workspace:*
+        version: link:packages/local-utils
+
+  packages/local-utils:
+    dependencies:
+      supports-color:
+        specifier: ^7.1.0
+        version: 7.2.0
+
+packages:
+
+  chalk@4.1.2:
+    resolution: {integrity: sha512-test}
+
+  ansi-styles@4.3.0:
+    resolution: {integrity: sha512-test}
+
+  left-pad@1.3.0:
+    resolution: {integrity: sha512-test}
+
+  supports-color@7.2.0:
+    resolution: {integrity: sha512-test}
+
+snapshots:
+
+  chalk@4.1.2:
+    dependencies:
+      ansi-styles: 4.3.0
+
+  ansi-styles@4.3.0: {}
+
+  left-pad@1.3.0: {}
+
+  supports-color@7.2.0: {}
 """
 
 
@@ -409,6 +459,46 @@ class TestParseYarnLock:
 
         with pytest.raises(IngestionError, match="Unsupported yarn.lock format"):
             parse_yarn_lock(lockfile)
+
+
+class TestParsePnpmLock:
+    def test_parse_pnpm_lock_with_workspace_importer(self, tmp_path):
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "pnpm-app",
+            "version": "1.0.0",
+        }))
+        workspace_dir = tmp_path / "packages" / "local-utils"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "package.json").write_text(json.dumps({
+            "name": "local-utils",
+            "version": "0.2.0",
+        }))
+        lockfile = tmp_path / "pnpm-lock.yaml"
+        lockfile.write_text(PNPM_LOCKFILE)
+
+        result = parse_pnpm_lock(lockfile)
+
+        assert result["root"] == "pnpm-app@1.0.0"
+        root = result["packages"]["pnpm-app@1.0.0"]
+        assert "chalk@4.1.2" in root["dependencies"]
+        assert "left-pad@1.3.0" in root["dependencies"]
+        assert "local-utils@0.2.0" in root["dependencies"]
+        assert result["root_dev_dependency_keys"] == ("left-pad@1.3.0", "local-utils@0.2.0")
+        workspace = result["packages"]["local-utils@0.2.0"]
+        assert "supports-color@7.2.0" in workspace["dependencies"]
+        chalk = result["packages"]["chalk@4.1.2"]
+        assert "ansi-styles@4.3.0" in chalk["dependencies"]
+
+    def test_parse_lockfile_dispatches_pnpm_lock(self, tmp_path):
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "pnpm-app",
+            "version": "1.0.0",
+        }))
+        (tmp_path / "pnpm-lock.yaml").write_text(PNPM_LOCKFILE)
+        (tmp_path / "packages").mkdir()
+
+        result = parse_lockfile(tmp_path / "pnpm-lock.yaml")
+        assert result["packages"]["chalk@4.1.2"]["name"] == "chalk"
 
 
 # ---------------------------------------------------------------------------

@@ -17,13 +17,13 @@ def batch_scans_dir() -> Path:
 
 def find_lockfile(repo_path: Path) -> Path | None:
     """Locate a supported lockfile for a repository path deterministically."""
-    for filename in ("package-lock.json", "yarn.lock"):
+    for filename in ("package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
         root_candidate = repo_path / filename
         if root_candidate.exists():
             return root_candidate
 
     candidates: list[Path] = []
-    for pattern in ("package-lock.json", "yarn.lock"):
+    for pattern in ("package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
         for path in repo_path.rglob(pattern):
             parts = set(path.parts)
             if ".git" in parts or "node_modules" in parts or "venv" in parts:

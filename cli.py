@@ -710,7 +710,7 @@ def cli() -> None:
                           graph-html
 
     Run any command with --help for details. All commands accept
-    package-lock.json (npm v2/v3) or yarn.lock (Yarn v1) as input. Structural analysis
+    package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml as input. Structural analysis
     only — does not guarantee install, build, or runtime correctness.
     """
 
@@ -828,7 +828,7 @@ def telemetry_flush() -> None:
 def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool) -> None:
     """Analyze a supported lockfile and report graph-level risk.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
 
     Builds the full dependency graph and prints: total / direct /
     transitive package counts, max depth, top packages by fanout and blast
@@ -929,7 +929,7 @@ def analyze(lockfile: Path, include_dev: bool, fanout_limit: int, as_json: bool)
 def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> None:
     """Rank packages by risk and recommend a concrete action for each.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
 
     Each recommendation has a type (REMOVE, REVIEW, or TRACE_UPSTREAM)
     and a short rationale. Follow up with `trace <pkg>` to see why a
@@ -992,7 +992,7 @@ def recommend(lockfile: Path, include_dev: bool, limit: int, as_json: bool) -> N
 def save_scan(lockfile: Path, include_dev: bool, limit: int) -> None:
     """Persist a normalized recommendation scan locally for later comparison.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
 
     Writes the same JSON `recommend --json` produces to:
     $DEPSLY_HOME/scans/<project-slug>-<timestamp>.json
@@ -1180,7 +1180,7 @@ def compare_scans(before_scan: Path, after_scan: Path, as_json: bool) -> None:
 def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open_browser: bool) -> None:
     """Generate a self-contained interactive HTML dependency graph explorer.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
 
     Writes a single HTML file with a clickable graph view (no network
     calls at view time). Default output: <lockfile-dir>/depsly-graph.html.
@@ -1240,7 +1240,7 @@ def graph_html(lockfile: Path, include_dev: bool, output_path: Path | None, open
 def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, as_json: bool) -> None:
     """Explain why a package exists by tracing shortest root-to-target paths.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
     PACKAGE_KEY is the target — a bare name (e.g. "lodash") or
     name@version (e.g. "lodash@4.17.21"). Bare names resolve to the
     version present in the graph.
@@ -1297,7 +1297,7 @@ def trace(lockfile: Path, package_key: str, include_dev: bool, max_paths: int, a
 def simulate_remove(lockfile: Path, package_key: str, include_dev: bool, as_json: bool) -> None:
     """Simulate removing a package and report which packages become orphaned.
 
-    LOCKFILE is a path to package-lock.json (npm v2/v3) or yarn.lock (Yarn v1).
+    LOCKFILE is a path to package-lock.json (npm v2/v3), yarn.lock (Yarn v1), or pnpm-lock.yaml.
     PACKAGE_KEY is the package to remove — bare name or name@version.
 
     Structural simulation only: computes the set of packages that would

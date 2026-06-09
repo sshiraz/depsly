@@ -9,7 +9,7 @@ from core.analyze import GraphReport
 from core.models import Recommendation
 from core.scoring import PACKAGE_SCORING_VERSION
 
-TOOL_VERSION = "0.1.11"
+TOOL_VERSION = "0.1.12"
 SCHEMA_VERSION = "1.0"
 ANALYZE_SCHEMA_VERSION = "1.0"
 TRACE_SCHEMA_VERSION = "1.0"
@@ -23,8 +23,13 @@ def scan_timestamp() -> str:
 
 def split_package_key(package_key: str) -> tuple[str, str]:
     """Split a package key into (name, version)."""
-    name, version = package_key.rsplit("@", 1)
-    return name, version
+    if package_key.startswith("@"):
+        separator = package_key.find("@", 1)
+    else:
+        separator = package_key.find("@")
+    if separator == -1:
+        return package_key, ""
+    return package_key[:separator], package_key[separator + 1 :]
 
 
 def _classification_scope(recommendation: Recommendation) -> str:

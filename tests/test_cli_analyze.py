@@ -12,6 +12,45 @@ from cli import cli
 
 
 class TestAnalyzeCli:
+    def test_analyze_supports_pnpm_lock(self, tmp_path):
+        (tmp_path / "package.json").write_text(json.dumps({
+            "name": "pnpm-app",
+            "version": "1.0.0",
+        }))
+        (tmp_path / "pnpm-lock.yaml").write_text(
+            """lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      chalk:
+        specifier: ^4.1.0
+        version: 4.1.2
+
+packages:
+
+  chalk@4.1.2:
+    resolution: {integrity: sha512-test}
+
+  ansi-styles@4.3.0:
+    resolution: {integrity: sha512-test}
+
+snapshots:
+
+  chalk@4.1.2:
+    dependencies:
+      ansi-styles: 4.3.0
+
+  ansi-styles@4.3.0: {}
+"""
+        )
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", str(tmp_path / "pnpm-lock.yaml")])
+        assert result.exit_code == 0
+        assert "Project: pnpm-app" in result.output
+        assert "chalk@4.1.2" in result.output
+
     def test_analyze_supports_yarn_lock(self, tmp_path):
         (tmp_path / "package.json").write_text(json.dumps({
             "name": "yarn-app",

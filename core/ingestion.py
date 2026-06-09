@@ -31,11 +31,13 @@ def parse_lockfile(
         return parse_package_lock(path, include_dev=include_dev)
     if filename == "yarn.lock":
         return parse_yarn_lock(path, include_dev=include_dev)
+    if filename == "pnpm-lock.yaml":
+        return parse_pnpm_lock(path, include_dev=include_dev)
     if path.suffix == ".json":
         return parse_package_lock(path, include_dev=include_dev)
 
     raise IngestionError(
-        f"Unsupported lockfile '{filename}'. Expected package-lock.json, yarn.lock, or a JSON package-lock file."
+        f"Unsupported lockfile '{filename}'. Expected package-lock.json, yarn.lock, pnpm-lock.yaml, or a JSON package-lock file."
     )
 
 
@@ -160,6 +162,142 @@ def parse_yarn_lock(
             "version": package["version"],
             "dependencies": package["dependencies"],
         }
+
+    return {
+        "root": root_key,
+        "packages": normalized_packages,
+        "root_dev_dependency_keys": tuple(sorted(set(root_dev_keys))),
+    }
+
+
+def parse_pnpm_lock(
+    lockfile: Path,
+    *,
+    include_dev: bool = True,
+) -> dict:
+    """Parse a pnpm-lock.yaml file and return normalized graph input."""
+    if lockfile.name != "pnpm-lock.yaml":
+        raise IngestionError("pnpm lockfile path must end with pnpm-lock.yaml")
+
+    raw = _read_yaml_file(lockfile)
+    if not isinstance(raw, dict):
+        raise IngestionError("pnpm-lock.yaml must decode to a mapping")
+
+    importers = raw.get("importers", {})
+    if not isinstance(importers, dict) or "." not in importers:
+        raise IngestionError("pnpm-lock.yaml must contain an importers section with a root importer '.'")
+
+    package_entries = raw.get("packages", {})
+    snapshot_entries = raw.get("snapshots", {})
+    if not isinstance(package_entries, dict):
+        raise IngestionError("'packages' section in pnpm-lock.yaml must be a mapping")
+    if not isinstance(snapshot_entries, dict):
+        raise IngestionError("'snapshots' section in pnpm-lock.yaml must be a mapping")
+
+    importer_keys_by_path: dict[str, str] = {}
+    importer_keys_by_name: dict[str, str] = {}
+    normalized_packages: dict[str, dict] = {}
+
+    for importer_path, importer_data in importers.items():
+        if not isinstance(importer_data, dict):
+            continue
+        importer_key, importer_name = _pnpm_importer_key(lockfile, importer_path)
+        importer_keys_by_path[importer_path] = importer_key
+        importer_keys_by_name[importer_name] = importer_key
+        normalized_packages.setdefault(
+            importer_key,
+            {
+                "name": importer_name,
+                "version": _pnpm_version_component(importer_key),
+                "dependencies": [],
+                "install_paths": [importer_path],
+            },
+        )
+
+    package_key_map: dict[str, str] = {}
+    all_entry_ids = set(package_entries) | set(snapshot_entries)
+    for raw_id in sorted(all_entry_ids):
+        canonical_key = _pnpm_canonical_key(raw_id)
+        package_key_map[raw_id] = canonical_key
+        name = _selector_name(canonical_key)
+        version = _pnpm_version_component(canonical_key)
+        normalized_packages.setdefault(
+            canonical_key,
+            {
+                "name": name,
+                "version": version,
+                "dependencies": [],
+                "install_paths": [f"pnpm:{raw_id}"],
+            },
+        )
+
+    root_importer = importers["."]
+    root_dep_requests = _pnpm_importer_requests(root_importer, include_dev=include_dev)
+    root_dev_requests = _pnpm_importer_requests(root_importer, include_dev=True, include_prod=False)
+
+    for importer_path, importer_data in importers.items():
+        if not isinstance(importer_data, dict):
+            continue
+        importer_key = importer_keys_by_path[importer_path]
+        dependency_requests = _pnpm_importer_requests(importer_data, include_dev=include_dev)
+        normalized_packages[importer_key]["dependencies"] = _pnpm_resolve_dependency_requests(
+            dependency_requests,
+            importer_path=importer_path,
+            lockfile=lockfile,
+            package_key_map=package_key_map,
+            importer_keys_by_path=importer_keys_by_path,
+            importer_keys_by_name=importer_keys_by_name,
+        )
+
+    for raw_id in sorted(all_entry_ids):
+        canonical_key = package_key_map[raw_id]
+        snapshot_data = snapshot_entries.get(raw_id, {})
+        package_data = package_entries.get(raw_id, {})
+        if not isinstance(snapshot_data, dict):
+            snapshot_data = {}
+        if not isinstance(package_data, dict):
+            package_data = {}
+
+        dependency_requests: dict[str, str] = {}
+        for section in ("dependencies", "optionalDependencies"):
+            section_data = snapshot_data.get(section)
+            if isinstance(section_data, dict):
+                dependency_requests.update({name: str(value) for name, value in section_data.items()})
+            elif isinstance(package_data.get(section), dict):
+                dependency_requests.update({name: str(value) for name, value in package_data[section].items()})
+
+        normalized_packages[canonical_key]["dependencies"] = _pnpm_resolve_dependency_requests(
+            dependency_requests,
+            importer_path=None,
+            lockfile=lockfile,
+            package_key_map=package_key_map,
+            importer_keys_by_path=importer_keys_by_path,
+            importer_keys_by_name=importer_keys_by_name,
+        )
+
+    root_key = importer_keys_by_path["."]
+    root_entry = normalized_packages[root_key]
+    root_entry["dependencies"] = _pnpm_resolve_dependency_requests(
+        root_dep_requests,
+        importer_path=".",
+        lockfile=lockfile,
+        package_key_map=package_key_map,
+        importer_keys_by_path=importer_keys_by_path,
+        importer_keys_by_name=importer_keys_by_name,
+    )
+
+    root_dev_keys = _pnpm_resolve_dependency_requests(
+        root_dev_requests,
+        importer_path=".",
+        lockfile=lockfile,
+        package_key_map=package_key_map,
+        importer_keys_by_path=importer_keys_by_path,
+        importer_keys_by_name=importer_keys_by_name,
+    )
+
+    for entry in normalized_packages.values():
+        entry["dependencies"] = sorted(dict.fromkeys(entry["dependencies"]))
+        entry["install_paths"] = sorted(dict.fromkeys(entry["install_paths"]))
 
     return {
         "root": root_key,
@@ -335,6 +473,185 @@ def _read_sibling_package_json(lockfile: Path) -> dict:
         return json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise IngestionError(f"Invalid sibling package.json near {lockfile}") from exc
+
+
+def _read_yaml_file(path: Path) -> dict:
+    try:
+        import yaml
+    except ImportError as exc:  # pragma: no cover - environment issue
+        raise IngestionError(
+            "PyYAML is required to parse pnpm-lock.yaml files."
+        ) from exc
+
+    try:
+        decoded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise IngestionError(f"Invalid pnpm-lock.yaml near {path}") from exc
+
+    if decoded is None:
+        return {}
+    return decoded
+
+
+def _pnpm_importer_key(lockfile: Path, importer_path: str) -> tuple[str, str]:
+    if importer_path == ".":
+        manifest_path = lockfile.with_name("package.json")
+    else:
+        manifest_path = lockfile.parent / importer_path / "package.json"
+
+    manifest: dict = {}
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {}
+
+    importer_name = manifest.get("name") or (lockfile.parent.name if importer_path == "." else Path(importer_path).name)
+    importer_version = manifest.get("version") or "0.0.0"
+    return f"{importer_name}@{importer_version}", importer_name
+
+
+def _pnpm_importer_requests(
+    importer_data: dict,
+    *,
+    include_dev: bool,
+    include_prod: bool = True,
+) -> dict[str, str]:
+    requests: dict[str, str] = {}
+    if include_prod:
+        for section in ("dependencies", "optionalDependencies"):
+            section_data = importer_data.get(section, {})
+            if isinstance(section_data, dict):
+                for dep_name, dep_info in section_data.items():
+                    resolved = _pnpm_dependency_ref(dep_info)
+                    if resolved is not None:
+                        requests[dep_name] = resolved
+    if include_dev:
+        section_data = importer_data.get("devDependencies", {})
+        if isinstance(section_data, dict):
+            for dep_name, dep_info in section_data.items():
+                resolved = _pnpm_dependency_ref(dep_info)
+                if resolved is not None:
+                    requests[dep_name] = resolved
+    return requests
+
+
+def _pnpm_dependency_ref(dep_info) -> str | None:
+    if isinstance(dep_info, str):
+        return dep_info
+    if isinstance(dep_info, dict):
+        version = dep_info.get("version")
+        if isinstance(version, str):
+            return version
+        specifier = dep_info.get("specifier")
+        if isinstance(specifier, str):
+            return specifier
+    return None
+
+
+def _pnpm_resolve_dependency_requests(
+    dependency_requests: dict[str, str],
+    *,
+    importer_path: str | None,
+    lockfile: Path,
+    package_key_map: dict[str, str],
+    importer_keys_by_path: dict[str, str],
+    importer_keys_by_name: dict[str, str],
+) -> list[str]:
+    resolved: list[str] = []
+    for dep_name, dep_ref in dependency_requests.items():
+        dep_key = _resolve_pnpm_dependency(
+            dep_name,
+            dep_ref,
+            importer_path=importer_path,
+            lockfile=lockfile,
+            package_key_map=package_key_map,
+            importer_keys_by_path=importer_keys_by_path,
+            importer_keys_by_name=importer_keys_by_name,
+        )
+        if dep_key is not None and dep_key not in resolved:
+            resolved.append(dep_key)
+    return resolved
+
+
+def _resolve_pnpm_dependency(
+    dep_name: str,
+    dep_ref: str,
+    *,
+    importer_path: str | None,
+    lockfile: Path,
+    package_key_map: dict[str, str],
+    importer_keys_by_path: dict[str, str],
+    importer_keys_by_name: dict[str, str],
+) -> str | None:
+    dep_ref = dep_ref.strip()
+    if not dep_ref:
+        return None
+
+    if dep_ref.startswith("link:"):
+        linked = dep_ref[len("link:") :]
+        target_importer = _normalize_linked_importer_path(lockfile, importer_path, linked)
+        if target_importer in importer_keys_by_path:
+            return importer_keys_by_path[target_importer]
+        return importer_keys_by_name.get(dep_name)
+
+    if dep_ref.startswith("workspace:"):
+        return importer_keys_by_name.get(dep_name)
+
+    if dep_ref.startswith("npm:"):
+        alias_target = dep_ref[len("npm:") :]
+        if "@" in alias_target:
+            aliased_name, aliased_version = alias_target.rsplit("@", 1)
+            candidate_ids = [
+                f"{aliased_name}@{aliased_version}",
+                f"{dep_name}@{aliased_version}",
+            ]
+        else:
+            candidate_ids = [f"{dep_name}@{alias_target}"]
+    else:
+        candidate_ids = [f"{dep_name}@{dep_ref}"]
+
+    for candidate in candidate_ids:
+        if candidate in package_key_map:
+            return package_key_map[candidate]
+
+    matching_ids = [raw_id for raw_id in package_key_map if _selector_name(raw_id) == dep_name]
+    if not matching_ids:
+        return None
+
+    preferred = sorted(
+        matching_ids,
+        key=lambda raw_id: (0 if _pnpm_version_component(raw_id) == dep_ref else 1, raw_id),
+    )
+    return package_key_map[preferred[0]]
+
+
+def _normalize_linked_importer_path(lockfile: Path, importer_path: str | None, linked: str) -> str:
+    root = lockfile.parent.resolve()
+    if importer_path in (None, "."):
+        base = root
+    else:
+        base = (root / importer_path).resolve()
+    normalized = (base / linked).resolve().as_posix()
+    root_normalized = root.as_posix()
+    if normalized == root_normalized:
+        return "."
+    if normalized.startswith(root_normalized + "/"):
+        return normalized[len(root_normalized) + 1 :]
+    return Path(linked).as_posix()
+
+
+def _pnpm_canonical_key(raw_id: str) -> str:
+    raw_id = raw_id.lstrip("/")
+    name = _selector_name(raw_id)
+    version = raw_id[len(name) + 1 :]
+    return f"{name}@{version}"
+
+
+def _pnpm_version_component(raw_id: str) -> str:
+    raw_id = raw_id.lstrip("/")
+    name = _selector_name(raw_id)
+    return raw_id[len(name) + 1 :]
 
 
 def _root_dependency_requests(manifest: dict, *, include_dev: bool) -> dict[str, str]:
