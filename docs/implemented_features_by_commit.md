@@ -160,6 +160,14 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - Extended package scoring helpers so callers can supply precomputed impact and feasibility values instead of recomputing them.
 - Preserved existing ranking behavior while reducing duplicate simulation work on larger graphs.
 
+## 2026-06-08
+
+### `f36c5fa` Add pnpm lockfile support in 0.1.12
+- Added `pnpm-lock.yaml` ingestion, including importer/package normalization and workspace link resolution.
+- Extended lockfile discovery so batch scanning recognizes `pnpm-lock.yaml`.
+- Updated CLI/help and README copy to describe npm, Yarn Classic v1, and pnpm support.
+- Added regression coverage for pnpm ingestion, batch detection, and CLI analysis behavior.
+
 ## Summary of Implemented Feature Areas
 
 - Backend/API scaffold
@@ -182,3 +190,4 @@ It intentionally excludes documentation-only and workflow-only commits such as `
 - `trace` CLI command
 - Classification-aware analyze UX
 - `pipx` / PyPI packaging metadata
+- `pnpm-lock.yaml` support

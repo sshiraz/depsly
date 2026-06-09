@@ -72,6 +72,9 @@ pip install depsly
 
 ## 🚀 Quick Start
 
+Replace `package-lock.json` in the examples below with `yarn.lock` or
+`pnpm-lock.yaml` if your project uses those lockfiles.
+
 ### Analyze your dependency graph
 
 ```bash
