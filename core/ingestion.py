@@ -48,8 +48,8 @@ def parse_package_lock(
 ) -> dict:
     """Parse a package-lock.json file and return normalized graph input.
 
-    Supports lockfileVersion 2 and 3 (npm v7+). The returned dict is ready
-    to pass directly to build_graph().
+    Supports lockfileVersion 1, 2, and 3. The returned dict is ready to pass
+    directly to build_graph().
     """
     path = _coerce_path(lockfile)
     if path is not None:
@@ -58,10 +58,13 @@ def parse_package_lock(
         raw = json.loads(_coerce_text(lockfile))
 
     lockfile_version = raw.get("lockfileVersion")
-    if lockfile_version not in (2, 3):
+    if lockfile_version not in (1, 2, 3):
         raise IngestionError(
-            f"Unsupported lockfileVersion: {lockfile_version}. Expected 2 or 3."
+            f"Unsupported lockfileVersion: {lockfile_version}. Expected 1, 2, or 3."
         )
+
+    if lockfile_version == 1:
+        return _normalize_package_lock_v1(raw, include_dev=include_dev)
 
     packages = raw.get("packages", {})
     if not isinstance(packages, dict):
@@ -376,6 +379,130 @@ def _normalize_package_lock(packages: dict, *, include_dev: bool) -> dict:
         dep_key = path_to_key.get(dep_path)
         if dep_key is not None:
             root_dev_keys.append(dep_key)
+
+    return {
+        "root": root_key,
+        "packages": normalized,
+        "root_dev_dependency_keys": tuple(sorted(set(root_dev_keys))),
+    }
+
+
+def _normalize_package_lock_v1(raw: dict, *, include_dev: bool) -> dict:
+    root_name = raw.get("name") or "package-lock-project"
+    root_version = raw.get("version", "0.0.0")
+    root_key = f"{root_name}@{root_version}"
+
+    top_dependencies = raw.get("dependencies", {})
+    if not isinstance(top_dependencies, dict):
+        raise IngestionError("'dependencies' field must be a dict for lockfileVersion 1")
+
+    packages: dict[str, dict] = {
+        "": {
+            "name": root_name,
+            "version": root_version,
+            "dependencies": top_dependencies,
+        }
+    }
+
+    def walk_dependencies(dep_map: dict, parent_path: str) -> None:
+        for dep_name, dep_info in dep_map.items():
+            if not isinstance(dep_info, dict):
+                continue
+            path = f"{parent_path}/node_modules/{dep_name}" if parent_path else f"node_modules/{dep_name}"
+            packages[path] = dep_info
+            nested = dep_info.get("dependencies", {})
+            if isinstance(nested, dict) and nested:
+                walk_dependencies(nested, path)
+
+    walk_dependencies(top_dependencies, "")
+
+    path_to_key: dict[str, str] = {"": root_key}
+    root_dev_dependency_names: set[str] = set()
+
+    for dep_name, dep_info in top_dependencies.items():
+        if isinstance(dep_info, dict) and dep_info.get("dev"):
+            root_dev_dependency_names.add(dep_name)
+
+    for path, info in packages.items():
+        if path == "":
+            continue
+        name = info.get("name") or _name_from_path(path)
+        if not name:
+            continue
+        version = info.get("version", "0.0.0")
+        path_to_key[path] = f"{name}@{version}"
+
+    normalized: dict[str, dict] = {
+        root_key: {
+            "name": root_name,
+            "version": root_version,
+            "dependencies": [],
+            "install_paths": [""],
+            "_seen": set(),
+            "_unresolved": [],
+        }
+    }
+
+    for path, info in packages.items():
+        key = path_to_key.get(path)
+        if key is None:
+            continue
+
+        if key not in normalized:
+            normalized[key] = {
+                "name": info.get("name") or _name_from_path(path),
+                "version": info.get("version", "0.0.0"),
+                "dependencies": [],
+                "install_paths": [],
+                "_seen": set(),
+                "_unresolved": [],
+            }
+        entry = normalized[key]
+        if path not in entry["install_paths"]:
+            entry["install_paths"].append(path)
+
+        if path == "":
+            raw_dep_names = [
+                dep_name
+                for dep_name, dep_info in top_dependencies.items()
+                if include_dev or not (isinstance(dep_info, dict) and dep_info.get("dev"))
+            ]
+        else:
+            requires = info.get("requires", {})
+            if isinstance(requires, dict) and requires:
+                raw_dep_names = list(requires)
+            else:
+                nested = info.get("dependencies", {})
+                raw_dep_names = list(nested) if isinstance(nested, dict) else []
+
+        for dep_name in raw_dep_names:
+            dep_path = _resolve_dep_path(path, dep_name, packages)
+            if dep_path is None:
+                entry["_unresolved"].append(dep_name)
+                continue
+            dep_key = path_to_key.get(dep_path)
+            if dep_key is None:
+                entry["_unresolved"].append(dep_name)
+                continue
+            if dep_key not in entry["_seen"]:
+                entry["_seen"].add(dep_key)
+                entry["dependencies"].append(dep_key)
+
+    root_dev_keys: list[str] = []
+    for dep_name in root_dev_dependency_names:
+        dep_path = _resolve_dep_path("", dep_name, packages)
+        if dep_path is None:
+            continue
+        dep_key = path_to_key.get(dep_path)
+        if dep_key is not None:
+            root_dev_keys.append(dep_key)
+
+    for entry in normalized.values():
+        entry.pop("_seen", None)
+        unresolved = entry.pop("_unresolved")
+        if unresolved:
+            entry["unresolved_dependencies"] = sorted(set(unresolved))
+        entry["install_paths"] = sorted(set(entry["install_paths"]))
 
     return {
         "root": root_key,

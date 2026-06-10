@@ -3,6 +3,7 @@
 import json
 import sys
 import os
+from pathlib import Path
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -287,9 +288,71 @@ class TestParsePackageLock:
         assert len(result["packages"]) == 1
 
     def test_unsupported_lockfile_version(self):
-        bad = json.dumps({"lockfileVersion": 1, "packages": {}})
+        bad = json.dumps({"lockfileVersion": 9, "packages": {}})
         with pytest.raises(IngestionError, match="Unsupported lockfileVersion"):
             parse_package_lock(bad)
+
+    def test_v1_lockfile_supported(self):
+        lockfile = json.dumps({
+            "name": "legacy-app",
+            "version": "1.0.0",
+            "lockfileVersion": 1,
+            "requires": True,
+            "dependencies": {
+                "left-pad": {
+                    "version": "1.3.0"
+                },
+                "async": {
+                    "version": "2.6.3",
+                    "requires": {
+                        "lodash": "^4.17.0"
+                    },
+                    "dependencies": {
+                        "lodash": {
+                            "version": "4.17.21"
+                        }
+                    }
+                }
+            }
+        })
+        result = parse_package_lock(lockfile)
+        assert result["root"] == "legacy-app@1.0.0"
+        root = result["packages"]["legacy-app@1.0.0"]
+        assert "left-pad@1.3.0" in root["dependencies"]
+        assert "async@2.6.3" in root["dependencies"]
+        async_pkg = result["packages"]["async@2.6.3"]
+        assert "lodash@4.17.21" in async_pkg["dependencies"]
+        assert async_pkg["install_paths"] == ["node_modules/async"]
+
+    def test_v1_root_dev_dependencies_excluded(self):
+        lockfile = json.dumps({
+            "name": "legacy-app",
+            "version": "1.0.0",
+            "lockfileVersion": 1,
+            "requires": True,
+            "dependencies": {
+                "prod-only": {
+                    "version": "1.0.0"
+                },
+                "dev-only": {
+                    "version": "2.0.0",
+                    "dev": True
+                }
+            }
+        })
+        result = parse_package_lock(lockfile, include_dev=False)
+        root = result["packages"]["legacy-app@1.0.0"]
+        assert "prod-only@1.0.0" in root["dependencies"]
+        assert "dev-only@2.0.0" not in root["dependencies"]
+
+    def test_real_lodash_v1_lockfile(self):
+        lockfile_path = Path(__file__).parent.parent / "lodash" / "package-lock.json"
+        if not lockfile_path.exists():
+            pytest.skip("lodash/package-lock.json not present")
+        result = parse_package_lock(lockfile_path)
+        assert result["root"] == "lodash@4.18.1"
+        root = result["packages"]["lodash@4.18.1"]
+        assert root["dependencies"]
 
     def test_missing_root_entry(self):
         bad = json.dumps({"lockfileVersion": 3, "packages": {

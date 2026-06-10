@@ -281,7 +281,7 @@ depsly recommend package-lock.json
 
 ## 🚧 Status
 
-Early release (v0.1.12)
+Early release (v0.1.13)
 
 Core features are stable:
 - analyze
@@ -295,6 +295,7 @@ Core features are stable:
 - save-scan
 - list-scans
 - compare-scans
+- package-lock.json v1 support
 - pnpm-lock.yaml support
 - graph-html
   Explorer-first HTML report with collapsible tree, path view, and neighborhood graph
